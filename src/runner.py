@@ -81,6 +81,6 @@ def main():
 
 
 if __name__ == "__main__":
-    res = main(config_path)
+    res = main()
 
 
