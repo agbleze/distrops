@@ -2,7 +2,8 @@ from ray import tune
 from ray.train.huggingface.transformers import RayTrainReportCallback, prepare_trainer
 from ray.tune.schedulers import ASHAScheduler
 from ray.tune.search.optuna import OptunaSearch
-from ray.air.config import RunConfig
+#from ray.air.config import RunConfig
+from ray.tune import RunConfig
 from transformers import AutoModelForSequenceClassification
 import ray
 from utils import load_config_file
@@ -28,6 +29,8 @@ def main():
     temp_dir = infra_config.get("temp_dir")
     directory_path = infra_config.get("directory_path")
     
+    #print(directory_path)
+    
     model_name = model_config.get("name")
     num_labels = model_config.get("num_labels")
     
@@ -38,7 +41,8 @@ def main():
     
     ray.init(ignore_reinit_error=True,
              _temp_dir=temp_dir,
-             _system_config={"object_spilling_config": '{"type": "filesystem", "params": {"directory_path": ["/mnt/d/ray_spill"]}}'},
+             object_spilling_directory=directory_path,
+             #_system_config={"object_spilling_config": f'{{"type": "filesystem", "params": {{"directory_path": [{directory_path}]}}}}'},
             )
     
     model = AutoModelForSequenceClassification.from_pretrained(model_name, 
