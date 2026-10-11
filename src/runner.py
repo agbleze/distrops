@@ -74,7 +74,7 @@ def main():
     results = tuner.fit()
     print(f"successfully fitted tuner")
     best_result = results.get_best_result(metric=hpo_config.get("metric"), mode=hpo_config.get("mode"))
-    print(f"Best Validation loss: {best_result.metrics[hpo_config.get("metric")]}")
+    print(f"Best Validation loss: {best_result.metrics[hpo_config.get('metric')]}")
     print(f"Best validation accuracy: {best_result.metrics['eval_accuracy']}")
     return results, best_result
 
