@@ -28,9 +28,7 @@ def main():
     hpo_config = config.get("hpo_bounds")
     temp_dir = infra_config.get("temp_dir")
     directory_path = infra_config.get("directory_path")
-    
-    #print(directory_path)
-    
+        
     model_name = model_config.get("name")
     num_labels = model_config.get("num_labels")
     
