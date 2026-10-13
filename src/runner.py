@@ -80,8 +80,6 @@ def main():
     print(f"Best validation accuracy: {best_result.metrics['eval_accuracy']}")
     return results, best_result
 
-
-
 if __name__ == "__main__":
     res = main()
 
