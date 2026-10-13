@@ -9,6 +9,7 @@ import ray
 from utils import load_config_file
 import os
 import argparse
+from train_worker import  train_model  
 
 
 def parse_args():
@@ -55,7 +56,7 @@ def main():
                               reduction_factor=2
                               )
     print("Configuring Tuner")
-    tuner = tune.Tuner(trainable=tune.with_resources(trainable=tune.with_parameters(model),
+    tuner = tune.Tuner(trainable=tune.with_resources(trainable=tune.with_parameters(train_model),
                                            resources={"cpu": infra_config.get("cpu"),
                                                       "gpu": infra_config.get("gpu")
                                                       }
