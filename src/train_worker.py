@@ -28,6 +28,11 @@ def train_model(config):
                                                                 num_labels=77
                                                                 )
     max_step = max_steps_per_epoch * epochs
+    
+    for epoch in range(epochs):
+        pass
+    
+    
     print("Configuring TrainingArguments and Trainer")
     args = TrainingArguments(num_train_epochs=epochs,
                              per_device_train_batch_size=batch_size,
