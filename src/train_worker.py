@@ -16,6 +16,7 @@ def train_model(config):
     batch_size = config.get("batch_size")
     metric_name = config.get("metric_name", "accuracy")
     epochs = config.get("epochs")
+    learning_rate = config.get("learning_rate")
     
     train_data_iterable, test_data_iterable, max_steps_per_epoch = data_loader(config=config)
     
@@ -27,10 +28,26 @@ def train_model(config):
                                                                 use_safetensors=True,
                                                                 num_labels=77
                                                                 )
+    optimizer = torch.optim.AdamW(model.parameters(), lr=learning_rate)
     max_step = max_steps_per_epoch * epochs
     
     for epoch in range(epochs):
-        pass
+        model.train()
+        train_loss = 0.0
+        train_steps = 0
+        
+        for batch in train_data_iterable:
+            optimizer.zero_grad()
+            outputs = model(**batch)
+            loss = outputs.loss
+            
+            loss.backward()
+            optimizer.step()
+            
+            train_loss += loss.item()
+            train_steps += 1
+            
+            
     
     
     print("Configuring TrainingArguments and Trainer")
