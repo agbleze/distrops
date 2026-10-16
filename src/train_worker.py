@@ -63,7 +63,7 @@ def train_model(config):
     avg_eval_loss = eval_loss / eval_steps if eval_loss > 0 else 0.0
     accuracy = metric.compute()["accuracy"]
 
-    metric_result = {"eval_loss": avg_eval_loss,
+    metric_result = {"loss": avg_eval_loss,
                      "train_loss": avg_train_loss,
                      "accuracy": accuracy,
                      "epoch": epoch
