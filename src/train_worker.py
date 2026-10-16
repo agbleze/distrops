@@ -1,14 +1,11 @@
 from .data_loader import data_loader
 from utils import compute_metric
 from functools import partial
+import torch
 
 
 def train_model(config):
-    from ray.train.huggingface.transformers import prepare_trainer
-    from transformers import (AutoModelForSequenceClassification, 
-                            TrainingArguments, 
-                            Trainer, pipeline,
-                            PrinterCallback
+    from transformers import (AutoModelForSequenceClassification
                             )
     import ray
     
@@ -46,39 +43,32 @@ def train_model(config):
             
             train_loss += loss.item()
             train_steps += 1
+        avg_train_loss = train_loss / train_steps if train_loss > 0 else 0.0
+        
+    model.eval()
+    eval_loss = 0.0
+    eval_steps = 0
+    
+    with torch.no_grad():
+        for batch in test_data_iterable:
+            outputs = model(**batch)
+            eval_loss += outputs.loss.item()
             
+            preds = torch.argmax(outputs.logits, dim=-1).cpu().numpy()
+            references = batch["labels"].cpu().numpy()
             
+            metric.add_batch(predictions=preds, references=references)
+            eval_steps += 1
+
+    avg_eval_loss = eval_loss / eval_steps if eval_loss > 0 else 0.0
+    accuracy = metric.compute()["accuracy"]
+
+    metric_result = {"eval_loss": avg_eval_loss,
+                     "train_loss": avg_train_loss,
+                     "accuracy": accuracy,
+                     "epoch": epoch
+                     }
+
     
-    
-    print("Configuring TrainingArguments and Trainer")
-    args = TrainingArguments(num_train_epochs=epochs,
-                             per_device_train_batch_size=batch_size,
-                             per_device_eval_batch_size=batch_size,
-                             learning_rate=config.get("learning_rate"),
-                             lr_scheduler_type=config.get("lr_scheduler_type"),
-                             optim=config.get("optim"),
-                             eval_strategy="epoch",
-                             save_strategy="best",
-                             metric_for_best_model="accuracy",
-                             max_steps=max_step,
-                             weight_decay=config.get("weight_decay"),
-                             )
-    trainer = Trainer(model=model,
-                      args=args,
-                      train_dataset=train_data_iterable,
-                      eval_dataset=test_data_iterable,
-                      compute_metrics=metric
-                      )
-    print("add callbacks")
-    trainer.add_callback(PrinterCallback())
-    print("prepare trainer")
-    trainer = prepare_trainer(trainer)
-    
-    print(" training...")
-    trainer.train()
-    print("evaluating ...")
-    eval_metrics = trainer.evaluate()
-    print(f"Evaluation metrics: {eval_metrics}")
-    
-    ray.tune.report(metrics=eval_metrics)
+    ray.tune.report(metric_result)
     
