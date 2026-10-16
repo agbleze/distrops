@@ -1,4 +1,4 @@
-from .data_loader import data_loader
+from data_loader import data_loader
 from utils import compute_metric
 from functools import partial
 import torch
