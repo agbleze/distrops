@@ -37,19 +37,19 @@ def main():
     optuna_search = OptunaSearch(metric="loss", mode="min")
     
     batche_size = hpo_config.get("batch_size")
-    optimizers = hpo_config.get("optimizers")
+    optimizer = hpo_config.get("optimizer")
     schedule_type = hpo_config.get("schedulers")
     learning_rate = hpo_config.get("learning_rate")
     weight_decay = hpo_config.get("weight_decay")
     num_samples = hpo_config.get("num_samples")
 
-    print(f"learning_rate: {float(learning_rate[0])}, weight_decay: {weight_decay}, batch_size: {batche_size}, optimizers: {optimizers}, schedule_type: {schedule_type}")
+    print(f"learning_rate: {float(learning_rate[0])}, weight_decay: {weight_decay}, batch_size: {batche_size}, optimizer: {optimizer}, schedule_type: {schedule_type}")
     
 
     param_search_space = {"batch_size": tune.choice(batche_size),
                             "learning_rate": tune.loguniform(float(learning_rate[0]), float(learning_rate[1])),
                             "lr_scheduler_type": tune.choice(categories=schedule_type),
-                            "optim": tune.choice(categories=optimizers),
+                            "optim": tune.choice(categories=optimizer),
                             "weight_decay": tune.uniform(lower=weight_decay[0], upper=weight_decay[1]),
                             **dataset_config,
                             **model_config,
