@@ -10,10 +10,11 @@ def train_model(config):
     import ray
     
     model_name = config.get("model_name")
-    batch_size = config.get("batch_size")
+    #batch_size = config.get("batch_size")
     metric_name = config.get("metric_name", "accuracy")
     epochs = config.get("epochs")
     learning_rate = config.get("learning_rate")
+    
     
     train_data_iterable, test_data_iterable, max_steps_per_epoch = data_loader(config=config)
     
@@ -28,6 +29,8 @@ def train_model(config):
     optimizer = torch.optim.AdamW(model.parameters(), lr=learning_rate)
     max_step = max_steps_per_epoch * epochs
     
+    avg_eval_loss = float('inf')
+    accuracy = 0.0
     for epoch in range(epochs):
         model.train()
         train_loss = 0.0
@@ -45,30 +48,30 @@ def train_model(config):
             train_steps += 1
         avg_train_loss = train_loss / train_steps if train_loss > 0 else 0.0
         
-    model.eval()
-    eval_loss = 0.0
-    eval_steps = 0
-    
-    with torch.no_grad():
-        for batch in test_data_iterable:
-            outputs = model(**batch)
-            eval_loss += outputs.loss.item()
-            
-            preds = torch.argmax(outputs.logits, dim=-1).cpu().numpy()
-            references = batch["labels"].cpu().numpy()
-            
-            metric.add_batch(predictions=preds, references=references)
-            eval_steps += 1
+        model.eval()
+        eval_loss = 0.0
+        eval_steps = 0
+        
+        with torch.no_grad():
+            for batch in test_data_iterable:
+                outputs = model(**batch)
+                eval_loss += outputs.loss.item()
+                
+                preds = torch.argmax(outputs.logits, dim=-1).cpu().numpy()
+                references = batch["labels"].cpu().numpy()
+                
+                metric.add_batch(predictions=preds, references=references)
+                eval_steps += 1
 
-    avg_eval_loss = eval_loss / eval_steps if eval_loss > 0 else 0.0
-    accuracy = metric.compute()["accuracy"]
+        avg_eval_loss = eval_loss / eval_steps if eval_loss > 0 else 0.0
+        accuracy = metric.compute()["accuracy"]
 
-    metric_result = {"loss": avg_eval_loss,
-                     "train_loss": avg_train_loss,
-                     "accuracy": accuracy,
-                     "epoch": epoch
-                     }
+        metric_result = {"loss": avg_eval_loss,
+                        "train_loss": avg_train_loss,
+                        "accuracy": accuracy,
+                        "epoch": epoch
+                        }
 
-    
-    ray.tune.report(metric_result)
-    
+        
+        ray.tune.report(metric_result)
+    print(f"Training completed for {epochs} epochs. Final evaluation loss: {avg_eval_loss}, accuracy: {accuracy}")    
