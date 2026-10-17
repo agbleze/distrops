@@ -14,7 +14,8 @@ def train_model(config):
     metric_name = config.get("metric_name", "accuracy")
     epochs = config.get("epochs")
     learning_rate = config.get("learning_rate")
-    
+    optimizer_name = config.get("optimizer")
+    weight_decay = config.get("weight_decay")
     
     train_data_iterable, test_data_iterable, max_steps_per_epoch = data_loader(config=config)
     
@@ -26,7 +27,15 @@ def train_model(config):
                                                                 use_safetensors=True,
                                                                 num_labels=77
                                                                 )
-    optimizer = torch.optim.AdamW(model.parameters(), lr=learning_rate)
+    if optimizer_name == "Adafactor":
+        from transformers import Adafactor
+        optimizer = Adafactor(model.parameters(), lr=learning_rate, 
+                              weight_decay=weight_decay,
+                              scale_parameter=False, relative_step=False
+                              )
+    else:
+        optimizer = getattr(torch.optim, optimizer_name)
+        optimizer = optimizer(model.parameters(), lr=learning_rate, weight_decay=weight_decay)
     max_step = max_steps_per_epoch * epochs
     
     avg_eval_loss = float('inf')
