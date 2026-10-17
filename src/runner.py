@@ -23,8 +23,9 @@ def main():
     args = parse_args()
     config_path = args.config_path
     config = load_config_file(config_path=config_path)
-    infra_config = config.get("infrastructure")
-    model_config = config.get("model")
+    infra_config = config.get("infrastructure", {})
+    model_config = config.get("model", {})
+    dataset_config = config.get("dataset", {})
     storage_path = infra_config.get("storage_path") 
     hpo_config = config.get("hpo_bounds")
     temp_dir = infra_config.get("temp_dir")
@@ -34,9 +35,30 @@ def main():
     num_labels = model_config.get("num_labels")
     
     optuna_search = OptunaSearch(metric="loss", mode="min")
+    
+    batche_size = hpo_config.get("batch_size")
+    optimizers = hpo_config.get("optimizers")
+    schedule_type = hpo_config.get("schedulers")
+    learning_rate = hpo_config.get("learning_rate")
+    weight_decay = hpo_config.get("weight_decay")
+    num_samples = hpo_config.get("num_samples")
 
+    print(f"learning_rate: {float(learning_rate[0])}, weight_decay: {weight_decay}, batch_size: {batche_size}, optimizers: {optimizers}, schedule_type: {schedule_type}")
+    
+
+    param_search_space = {"batch_size": tune.choice(batche_size),
+                            "learning_rate": tune.loguniform(float(learning_rate[0]), float(learning_rate[1])),
+                            "lr_scheduler_type": tune.choice(categories=schedule_type),
+                            "optim": tune.choice(categories=optimizers),
+                            "weight_decay": tune.uniform(lower=weight_decay[0], upper=weight_decay[1]),
+                            **dataset_config,
+                            **model_config,
+                            **infra_config,
+                            }
     
     os.makedirs(storage_path, exist_ok=True)
+    
+    run_config_name=f"{dataset_config.get('dataset_name', 'default')}_tune_demo"
     
     ray.init(ignore_reinit_error=True,
              _temp_dir=temp_dir,
@@ -44,10 +66,7 @@ def main():
              #_system_config={"object_spilling_config": f'{{"type": "filesystem", "params": {{"directory_path": [{directory_path}]}}}}'},
             )
     
-    model = AutoModelForSequenceClassification.from_pretrained(model_name, 
-                                                                use_safetensors=True,
-                                                                num_labels=num_labels
-                                                                )
+    
     
     print("Configuring scheduler")
     scheduler = ASHAScheduler(time_attr="training_iteration",
@@ -56,21 +75,22 @@ def main():
                               reduction_factor=2
                               )
     print("Configuring Tuner")
-    tuner = tune.Tuner(trainable=tune.with_resources(trainable=tune.with_parameters(train_model),
-                                           resources={"cpu": infra_config.get("cpu"),
-                                                      "gpu": infra_config.get("gpu")
-                                                      }
-                                           ),
+    tuner = tune.Tuner(trainable=tune.with_resources(
+                                            trainable=train_model,
+                                            resources={"cpu": infra_config.get("cpu"),
+                                                        "gpu": infra_config.get("gpu")
+                                                        }
+                                        ),
                        tune_config=tune.TuneConfig(metric=hpo_config.get("metric"),
                                                    mode=hpo_config.get("mode"),
                                                    scheduler=scheduler,
-                                                   num_samples=hpo_config.get("num_samples"),
+                                                   num_samples=num_samples,
                                                    search_alg=optuna_search,
                                                    ),
-                       run_config=RunConfig(name=f"{config.get('dataset_name')}_tune_demo",
+                       run_config=RunConfig(name=run_config_name,
                                             storage_path=storage_path
                                             ),
-                       param_space=config,
+                       param_space=param_search_space,
         
                     )
     print(f"fitting tuner")
