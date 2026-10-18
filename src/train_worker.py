@@ -1,7 +1,9 @@
-from data_loader import data_loader
+from data_loader import get_data
 from utils import compute_metric
 from functools import partial
 import torch
+import evaluate
+from transformers import get_scheduler
 
 
 def train_model(config):
@@ -16,10 +18,13 @@ def train_model(config):
     learning_rate = config.get("learning_rate")
     optimizer_name = config.get("optimizer")
     weight_decay = config.get("weight_decay")
+    lr_scheduler_type = config.get("lr_scheduler_type", "linear")
     
-    train_data_iterable, test_data_iterable, max_steps_per_epoch = data_loader(config=config)
     
-    metric = partial(compute_metric, metric_name=metric_name)
+    train_data_iterable, test_data_iterable, max_steps_per_epoch = get_data(config=config)
+    
+    #metric = partial(compute_metric, metric_name=metric_name)
+    metric = evaluate.load(metric_name)
 
 
     print("Getting Model")
@@ -37,6 +42,14 @@ def train_model(config):
         optimizer = getattr(torch.optim, optimizer_name)
         optimizer = optimizer(model.parameters(), lr=learning_rate, weight_decay=weight_decay)
     max_step = max_steps_per_epoch * epochs
+    warmup_steps = int(max_step * 0.1)
+    
+    print(f"Using lr_scheduler_type: {lr_scheduler_type}, optimizer: {optimizer_name}, learning_rate: {learning_rate}, weight_decay: {weight_decay}")
+    lr_scheduler = get_scheduler(name=lr_scheduler_type,
+                                 optimizer=optimizer,
+                                 num_warmup_steps=warmup_steps,
+                                 num_training_steps=max_step
+                                 )
     
     avg_eval_loss = float('inf')
     accuracy = 0.0
@@ -50,13 +63,22 @@ def train_model(config):
             outputs = model(**batch)
             loss = outputs.loss
             
+            train_preds = torch.argmax(outputs.logits, dim=-1).cpu().numpy()
+            train_ref = batch["labels"].cpu().numpy()
+            metric.add_batch(predictions=train_preds, references=train_ref)
+            
             loss.backward()
             optimizer.step()
+            
+            lr_scheduler.step()
             
             train_loss += loss.item()
             train_steps += 1
         avg_train_loss = train_loss / train_steps if train_loss > 0 else 0.0
-        
+        train_acc = metric.compute()["accuracy"]
+        print(f"Epoch {epoch + 1} train loss: {avg_train_loss}")
+        print(f"Epoch {epoch + 1} train accuracy: {train_acc}")
+
         model.eval()
         eval_loss = 0.0
         eval_steps = 0
@@ -80,6 +102,8 @@ def train_model(config):
                         "accuracy": accuracy,
                         "epoch": epoch
                         }
+        print(f"Epoch {epoch + 1} evaluation loss: {avg_eval_loss}")
+        print(f"Epoch {epoch + 1} evaluation accuracy: {accuracy}")
 
         
         ray.tune.report(metric_result)
