@@ -2,9 +2,7 @@ from ray import tune
 from ray.train.huggingface.transformers import RayTrainReportCallback, prepare_trainer
 from ray.tune.schedulers import ASHAScheduler
 from ray.tune.search.optuna import OptunaSearch
-#from ray.air.config import RunConfig
 from ray.tune import RunConfig
-from transformers import AutoModelForSequenceClassification
 import ray
 from utils import load_config_file
 import os
@@ -49,7 +47,7 @@ def main():
     param_search_space = {"batch_size": tune.choice(batche_size),
                             "learning_rate": tune.loguniform(float(learning_rate[0]), float(learning_rate[1])),
                             "lr_scheduler_type": tune.choice(categories=schedule_type),
-                            "optim": tune.choice(categories=optimizer),
+                            "optimizer": tune.choice(categories=optimizer),
                             "weight_decay": tune.uniform(lower=weight_decay[0], upper=weight_decay[1]),
                             **dataset_config,
                             **model_config,
