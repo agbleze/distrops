@@ -7,7 +7,7 @@ from utils import load_config_file
 import os
 import argparse
 from train_worker import  train_model  
-
+from ray.tune.logger import TBXLoggerCallback
 
 def parse_args():
     parser = argparse.ArgumentParser(description="HPO with ray")
@@ -78,7 +78,8 @@ def main():
                                                    search_alg=optuna_search,
                                                    ),
                        run_config=RunConfig(name=run_config_name,
-                                            storage_path=storage_path
+                                            storage_path=storage_path,
+                                            callbacks=[TBXLoggerCallback()]
                                             ),
                        param_space=param_search_space,
                     )
