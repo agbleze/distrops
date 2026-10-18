@@ -1,0 +1,29 @@
+# config/search_space.yaml
+infrastructure:
+  storage_path: "/mnt/d/distributed_work/cluster_storage/ray-results"
+  temp_dir: "/tmp/ray_native"
+  directory_path: "/mnt/d/ray_spill"
+  device: "cuda"
+  cpu: 2
+  gpu: 0.5
+
+dataset:
+  dataset_name: "legacy-datasets/banking77"
+
+model:
+  model_name: "microsoft/deberta-v3-small"
+  epochs: 3
+  num_labels: 77
+  metric_name: "accuracy"
+
+hpo_bounds:
+  batch_size: [8, 16]
+  optimizer: ["AdamW", "SGD", "Adafactor"]
+  schedulers: ["linear", "cosine", "constant", "constant_with_warmup"]
+  learning_rate: [1e-5, 1e-1]
+  weight_decay: [0.01, 0.1]
+  metric: "eval_loss"
+  mode: "min"
+  num_samples: 3
+  grace_period: 1
+  reduction_factor: 2
