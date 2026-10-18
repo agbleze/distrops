@@ -40,6 +40,8 @@ def main():
     learning_rate = hpo_config.get("learning_rate")
     weight_decay = hpo_config.get("weight_decay")
     num_samples = hpo_config.get("num_samples")
+    grace_period = hpo_config.get("grace_period", 2)
+    reduction_factor = hpo_config.get("reduction_factor", 2)
 
     print(f"learning_rate: {float(learning_rate[0])}, weight_decay: {weight_decay}, batch_size: {batche_size}, optimizer: {optimizer}, schedule_type: {schedule_type}")
     
@@ -69,8 +71,8 @@ def main():
     print("Configuring scheduler")
     scheduler = ASHAScheduler(time_attr="training_iteration",
                               max_t=model_config.get("epochs"),
-                              grace_period=2,
-                              reduction_factor=2
+                              grace_period=grace_period,
+                              reduction_factor=reduction_factor
                               )
     print("Configuring Tuner")
     tuner = tune.Tuner(trainable=tune.with_resources(
