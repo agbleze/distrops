@@ -1,5 +1,4 @@
 from ray import tune
-from ray.train.huggingface.transformers import RayTrainReportCallback, prepare_trainer
 from ray.tune.schedulers import ASHAScheduler
 from ray.tune.search.optuna import OptunaSearch
 from ray.tune import RunConfig
@@ -16,7 +15,6 @@ def parse_args():
     return parser.parse_args()
     
 
-#%%
 def main():
     args = parse_args()
     config_path = args.config_path
@@ -28,9 +26,6 @@ def main():
     hpo_config = config.get("hpo_bounds")
     temp_dir = infra_config.get("temp_dir")
     directory_path = infra_config.get("directory_path")
-        
-    model_name = model_config.get("name")
-    num_labels = model_config.get("num_labels")
     
     optuna_search = OptunaSearch(metric="loss", mode="min")
     
@@ -42,9 +37,6 @@ def main():
     num_samples = hpo_config.get("num_samples")
     grace_period = hpo_config.get("grace_period", 2)
     reduction_factor = hpo_config.get("reduction_factor", 2)
-
-    print(f"learning_rate: {float(learning_rate[0])}, weight_decay: {weight_decay}, batch_size: {batche_size}, optimizer: {optimizer}, schedule_type: {schedule_type}")
-    
 
     param_search_space = {"batch_size": tune.choice(batche_size),
                             "learning_rate": tune.loguniform(float(learning_rate[0]), float(learning_rate[1])),
@@ -63,10 +55,7 @@ def main():
     ray.init(ignore_reinit_error=True,
              _temp_dir=temp_dir,
              object_spilling_directory=directory_path,
-             #_system_config={"object_spilling_config": f'{{"type": "filesystem", "params": {{"directory_path": [{directory_path}]}}}}'},
             )
-    
-    
     
     print("Configuring scheduler")
     scheduler = ASHAScheduler(time_attr="training_iteration",
@@ -74,6 +63,7 @@ def main():
                               grace_period=grace_period,
                               reduction_factor=reduction_factor
                               )
+    
     print("Configuring Tuner")
     tuner = tune.Tuner(trainable=tune.with_resources(
                                             trainable=train_model,
@@ -91,8 +81,8 @@ def main():
                                             storage_path=storage_path
                                             ),
                        param_space=param_search_space,
-        
                     )
+    
     print(f"fitting tuner")
     results = tuner.fit()
     print(f"successfully fitted tuner")
@@ -103,5 +93,3 @@ def main():
 
 if __name__ == "__main__":
     res = main()
-
-
