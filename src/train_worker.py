@@ -12,25 +12,22 @@ def train_model(config):
     import ray
     
     model_name = config.get("model_name")
-    #batch_size = config.get("batch_size")
     metric_name = config.get("metric_name", "accuracy")
     epochs = config.get("epochs")
+    num_labels = config.get("num_labels")
     learning_rate = config.get("learning_rate")
     optimizer_name = config.get("optimizer")
     weight_decay = config.get("weight_decay")
     lr_scheduler_type = config.get("lr_scheduler_type", "linear")
     
-    
     train_data_iterable, test_data_iterable, max_steps_per_epoch = get_data(config=config)
     
-    #metric = partial(compute_metric, metric_name=metric_name)
     metric = evaluate.load(metric_name)
-
 
     print("Getting Model")
     model = AutoModelForSequenceClassification.from_pretrained(model_name, 
                                                                 use_safetensors=True,
-                                                                num_labels=77
+                                                                num_labels=num_labels
                                                                 )
     if optimizer_name == "Adafactor":
         from transformers import Adafactor
@@ -74,6 +71,7 @@ def train_model(config):
             
             train_loss += loss.item()
             train_steps += 1
+            
         avg_train_loss = train_loss / train_steps if train_loss > 0 else 0.0
         train_acc = metric.compute()["accuracy"]
         print(f"Epoch {epoch + 1} train loss: {avg_train_loss}")
