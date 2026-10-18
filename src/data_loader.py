@@ -6,7 +6,7 @@ from functools import partial
 from transformers import AutoTokenizer
 
 
-def data_loader(config):
+def get_data(config):
     dataset_name = config.get("dataset_name")
     batch_size = config.get("batch_size")
     model_name = config.get("model_name")
