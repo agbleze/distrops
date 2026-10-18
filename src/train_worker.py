@@ -95,14 +95,14 @@ def train_model(config):
         avg_eval_loss = eval_loss / eval_steps if eval_loss > 0 else 0.0
         accuracy = metric.compute()["accuracy"]
 
-        metric_result = {"loss": avg_eval_loss,
+        metric_result = {"eval_loss": avg_eval_loss,
                         "train_loss": avg_train_loss,
-                        "accuracy": accuracy,
+                        "eval_accuracy": accuracy,
+                        "train_accuracy": train_acc,
                         "epoch": epoch
                         }
         print(f"Epoch {epoch + 1} evaluation loss: {avg_eval_loss}")
         print(f"Epoch {epoch + 1} evaluation accuracy: {accuracy}")
-
         
         ray.tune.report(metric_result)
     print(f"Training completed for {epochs} epochs. Final evaluation loss: {avg_eval_loss}, accuracy: {accuracy}")    
