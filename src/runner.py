@@ -35,8 +35,8 @@ def main():
     learning_rate = hpo_config.get("learning_rate")
     weight_decay = hpo_config.get("weight_decay")
     num_samples = hpo_config.get("num_samples")
-    grace_period = hpo_config.get("grace_period", 2)
-    reduction_factor = hpo_config.get("reduction_factor", 2)
+    grace_period = hpo_config.get("grace_period", 1)
+    reduction_factor = hpo_config.get("reduction_factor", 1)
 
     param_search_space = {"batch_size": tune.choice(batche_size),
                             "learning_rate": tune.loguniform(float(learning_rate[0]), float(learning_rate[1])),
