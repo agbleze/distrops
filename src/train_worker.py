@@ -1,16 +1,11 @@
 from data_loader import get_data
-from utils import compute_metric
-from functools import partial
 import torch
 import evaluate
 from transformers import get_scheduler
-
+from transformers import AutoModelForSequenceClassification
+import ray
 
 def train_model(config):
-    from transformers import (AutoModelForSequenceClassification
-                            )
-    import ray
-    
     model_name = config.get("model_name")
     metric_name = config.get("metric_name", "accuracy")
     epochs = config.get("epochs")
