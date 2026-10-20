@@ -97,5 +97,15 @@ def train_hyperparameter_search(config_path):
     print(f"Best validation accuracy: {best_result.metrics['eval_accuracy']}")
     return results, best_result
 
+
+def main():
+    args = parse_args()
+    if args.command == "train":
+        print(f"Training with config: {args.config_path}")
+        pass
+    elif args.command == "hpo":
+        print(f"Start Hyperparameter Sweep with {args.config_path}")
+        train_hyperparameter_search(config_path=args.config_path)
+        
 if __name__ == "__main__":
     res = main()
