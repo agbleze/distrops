@@ -10,8 +10,15 @@ from .train_worker import  train_model
 from ray.tune.logger import TBXLoggerCallback
 
 def parse_args():
-    parser = argparse.ArgumentParser(description="HPO with ray")
-    parser.add_argument("--config_path", type=str, required=True, help='Path to the configuration file')
+    parser = argparse.ArgumentParser(description="Distributed training and Hyperparameter Optimization pipeline tool")
+    subparsers = parser.add_subparsers(dest="command", required=True, help="Available subcommands")
+    
+    train_parser = subparsers.add_parser("train", help="Train a model with the provided configuration")
+    train_parser.add_argument("--config_path", type=str, required=True, help='Path to the YAML configuration file')
+    
+    hpo_parser = subparsers.add_parser("hpo", help="Perform distributed hyperparameter sweep")
+    hpo_parser.add_argument("--config_path", type=str, required=True, help='Path to the YAML configuration file')
+    
     return parser.parse_args()
     
 
