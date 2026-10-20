@@ -1,7 +1,7 @@
 
 import ray
 from datasets import load_dataset
-from utils import tokenize_batch
+from .utils import tokenize_batch
 from functools import partial
 from transformers import AutoTokenizer
 
