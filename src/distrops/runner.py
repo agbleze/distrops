@@ -3,10 +3,10 @@ from ray.tune.schedulers import ASHAScheduler
 from ray.tune.search.optuna import OptunaSearch
 from ray.tune import RunConfig
 import ray
-from utils import load_config_file
+from .utils import load_config_file
 import os
 import argparse
-from train_worker import  train_model  
+from .train_worker import  train_model  
 from ray.tune.logger import TBXLoggerCallback
 
 def parse_args():
