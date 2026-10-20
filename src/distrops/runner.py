@@ -15,7 +15,7 @@ def parse_args():
     return parser.parse_args()
     
 
-def main():
+def train_hyperparameter_search():
     args = parse_args()
     config_path = args.config_path
     config = load_config_file(config_path=config_path)
