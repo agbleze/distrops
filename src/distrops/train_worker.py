@@ -1,4 +1,4 @@
-from data_loader import get_data
+from .data_loader import get_data
 import torch
 import evaluate
 from transformers import get_scheduler
