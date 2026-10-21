@@ -106,6 +106,6 @@ def main():
     elif args.command == "hpo":
         print(f"Start Hyperparameter Sweep with {args.config_path}")
         train_hyperparameter_search(config_path=args.config_path)
-        
+    
 if __name__ == "__main__":
     res = main()
