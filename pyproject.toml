@@ -9,6 +9,12 @@ readme = "README.md"
 [tool.poetry.dependencies]
 python = "^3.10"
 
+[tool.poetry.optional-dependencies]
+dev = ["pytest", "black", "ruff"]
+dashboard = ["tensorboard>=2.14.0"]
+all = ["distrops[dev, dashboard]"]
+
+
 [tool.semantic_release]
 version_toml = ["pyproject.toml:tool.poetry.version"]      
 version_variable = ["src/distrops/__init__.py:__version__"]
@@ -34,3 +40,5 @@ default = "semantic-release <auto-build>"
 [tool.semantic_release.publish]
 upload_to_vcs_release=true
 dist_glob_patterns = ["dist/"]
+
+
