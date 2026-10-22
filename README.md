@@ -73,6 +73,8 @@ pip install -e ".[all]"
 
 ---
 
+# Usage
+
 ## Command-Line Interface (CLI) Specification
 
 `distrops` exposes a unified, brand-encapsulated CLI tool namespace. Trailing subcommands route execution dynamically to decoupled backend engines via an abstract subparsers routing layer.
@@ -82,8 +84,6 @@ Orchestrates a comprehensive distributed hyperparameter search sweep, evaluating
 ```bash
 distrops hpo --config_filepath config/config.yml
 ```
-
-# Usage
 
 ### 2. Run a Single Baseline Trial
 Trains a single model checkpoint against fixed, explicit parameters to establish baseline performance metrics:
