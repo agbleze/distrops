@@ -4,7 +4,7 @@
 [![Package Version](https://shields.io)](https://github.com)
 [![License](https://shields.io)](LICENSE)
 
-**distrops** (Distributed Training Operations) is a model-agnostic, enterprise-grade runtime framework engineered to unify, scale, and automate distributed model training and asynchronous hyperparameter optimization sweeps. 
+**distrops** (Distributed Training Operations) is a model-agnostic framework engineered to unify, scale, and automate distributed model training and asynchronous hyperparameter optimization sweeps. 
 
 `distrops` provides a declarative, configuration-driven workflow spanning data access, model definition, hyperparameter configuration and the necessary orchestration logic for complete model training in a distributed manner. Whether you are fine-tuning a language transformer, training a computer vision backbone, or sweeping parameters across an ensemble of tabular gradient boosters, `distrops` handles resource orchestration and trial lifecycle management uniformly as appropriate.
 
