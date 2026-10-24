@@ -2,7 +2,8 @@ import evaluate
 import numpy as np
 import torch
 import yaml
-
+import inspect
+from typing import Callable, Any, Dict, Tuple
 
 def tokenize_batch(batch, tokenizer, device):
     text = batch["text"]
@@ -27,3 +28,12 @@ def load_config_file(config_path):
     with open(config_path, "r") as f:
         config = yaml.safe_load(f)
     return config
+
+
+
+def get_expected_arguments(func):
+    pass
+
+
+
+
