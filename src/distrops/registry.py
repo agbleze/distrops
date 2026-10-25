@@ -19,7 +19,7 @@ class Registry:
         Returns:
             None: _description_
         """
-        if name in self._registry:
+        if name not in self._registry:
             raise ValueError(f"{name} is already in {self.registry_name}")
         self._registry[name] = cls
         
