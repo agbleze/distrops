@@ -4,9 +4,22 @@
 [![Package Version](https://shields.io)](https://github.com)
 [![License](https://shields.io)](LICENSE)
 
-**distrops** (Distributed Training Operations) is a model-agnostic framework engineered to unify, scale, and automate distributed model training and asynchronous hyperparameter optimization sweeps. 
+**distrops** (Distributed Training Operations) is a model-agnostic framework engineered to unify, scale, and automate distributed model training and asynchronous hyperparameter optimization sweeps. The framework provides a programmatic guardrail interface for machine learning workflow.
 
-`distrops` provides a declarative, configuration-driven workflow spanning data access, model definition, hyperparameter configuration and the necessary orchestration logic for complete model training in a distributed manner. Whether you are fine-tuning a language transformer, training a computer vision backbone, or sweeping parameters across an ensemble of tabular gradient boosters, `distrops` handles resource orchestration and trial lifecycle management uniformly as appropriate.
+`distrops` provides a declarative, configuration-driven workflow spanning data access, model definition, hyperparameter configuration and the necessary orchestration logic for complete model training in a distributed manner. Whether you are fine-tuning a language transformer, training a computer vision backbone, or sweeping parameters across an ensemble of tabular gradient boosters, `distrops` assembles the building blocks, handles resource orchestration and trial lifecycle management uniformly as appropriate.
+
+
+---
+
+## The Unified Value Proposition
+
+The distributed machine learning ecosystem often forces engineering teams to choose between two structural extremes:
+*   **Raw Infrastructure Primitives:** Low-level clustering utilities provide infinite flexibility but burden developers with massive boilerplate, fragile orchestration logic, and intricate network serialization traps.
+*   **Opaque No-Code Engines:** Monolithic configuration engines abstract away infrastructure but hide the underlying machine learning logic behind rigid schemas, making it difficult for research teams to inject custom modeling techniques, losses, or experimental architectures.
+
+**`distrops` bridges this gap natively by acting as a programmatic, guardrailed platform layer.** 
+
+`distrops` lets engineers write pure, uninhibited PyTorch, Hugging Face, or traditional statistical learning code in addition to providing direct access to those provided by existing frameworks. By simply attaching a `@REGISTRY` decorator or inheriting from a baseline blueprint, developers instantly gain access to robust distributed orchestration, hyperparameter tuning, and automated early stopping - leaving `distrops` to assemble them and orchestrate them with distributed computing engineering under the hood.
 
 ---
 
