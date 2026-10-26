@@ -1,6 +1,7 @@
 from .registry import MODEL_REGISTRY
 from .utils import get_expected_arguments
 import torchvision.models as models
+import sklearn.ensemble as ensemble
 
 @MODEL_REGISTRY.register(name="huggingface_sequence_classification")
 def hf_reflective_factory(config: dict):
@@ -23,3 +24,21 @@ def torchvision_image_classification_factory(config: dict):
     args, kwargs = get_expected_arguments(model_builder, config)
     model = model_builder(*args, **kwargs)
     return model
+
+
+@MODEL_REGISTRY.register(name="sklearn_ensemble")
+def register_sklearn_ensemble_models(config: dict):
+    model_name = config.get("model_name")
+    if not model_name:
+        raise ValueError("Please provide a model_name in the config for sklearn_ensemble models.")
+    
+    if not hasattr(ensemble, model_name):
+        raise AttributeError(f"{model_name} is not a valid sklearn ensemble model in sklearn.ensemble. Please check the model name.")
+    
+    model_builder = getattr(ensemble, model_name)
+    args, kwargs = get_expected_arguments(model_builder, config)
+    model = model_builder(*args, **kwargs)
+    return model
+    
+    
+    
