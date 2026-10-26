@@ -41,4 +41,11 @@ def register_sklearn_ensemble_models(config: dict):
     return model
     
     
+@MODEL_REGISTRY.register(name="hugginhface_audio_classification")
+def register_huggingface_audio_classification(config: dict):
+    from transformers import AutoModelForAudioClassification
     
+    args, kwargs = get_expected_arguments(AutoModelForAudioClassification.from_pretrained, config)
+    
+    model = AutoModelForAudioClassification.from_pretrained(*args, **kwargs)
+    return model    
