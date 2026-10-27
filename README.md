@@ -9,7 +9,6 @@
 `distrops` provides a declarative, configuration-driven workflow spanning data access, model definition, hyperparameter configuration and the necessary orchestration logic for complete model training in a distributed manner. Whether you are fine-tuning a language transformer, training a computer vision backbone, or sweeping parameters across an ensemble of tabular gradient boosters, `distrops` assembles the building blocks, handles resource orchestration and trial lifecycle management uniformly as appropriate.
 
 
----
 
 ## The Unified Value Proposition
 
@@ -21,7 +20,7 @@ The distributed machine learning ecosystem often forces engineering teams to cho
 
 `distrops` lets engineers write pure, uninhibited PyTorch, Hugging Face, or traditional statistical learning code in addition to providing direct access to those provided by existing frameworks. By simply attaching a `@REGISTRY` decorator or inheriting from a baseline blueprint, developers instantly gain access to robust distributed orchestration, hyperparameter tuning, and automated early stopping - leaving `distrops` to assemble them and orchestrate them with distributed computing engineering under the hood.
 
----
+
 
 ## Core Package Architecture & State Flow
 
@@ -50,7 +49,7 @@ The distributed machine learning ecosystem often forces engineering teams to cho
 *   **The Orchestration Engine (Driver):** Acts as the centralized cluster control tower. It ingests your declaration manifests, provisions multi-tenant system resource boundaries, schedules execution waves, and applies automated early-stopping heuristics based on historical trial performance.
 *   **The Isolated Worker Engines:** Spin up dynamically within isolated hardware contexts. Workers execute lazy importing to initialize completely self-contained training graphs, native optimization routines, and direct, asynchronous telemetry event streaming.
 
----
+
 
 ## Key Capabilities & Framework Features
 
@@ -60,7 +59,7 @@ The distributed machine learning ecosystem often forces engineering teams to cho
 *   **Storage Boundary Hardening:** Enforces strict execution checkpoint limits to prune sub-optimal intermediate models in real-time, automatically tracking the absolute top-performing parameters while protecting drive space.
 *   **Uniform Metric Telemetry Contracts:** Standardizes evaluation tracking flags across all distributed worker nodes, providing robust, non-blocking telemetry streaming that pipes logs straight to shared external visualization drives.
 
----
+
 
 ## Getting Started
 
@@ -84,7 +83,7 @@ pip install -e ".[all]"
 ```
 *Note: The outer quotation marks are required in advanced shells like Zsh to prevent character-globbing evaluation errors.*
 
----
+
 
 # Usage
 
@@ -110,9 +109,8 @@ Traces, quantizes, or packages trained model artifacts to produce highly optimiz
 distrops optimize --config_filepath config/config.yml
 ```
 
----
 
-## 📊 Observability & Performance Monitoring
+## Observability & Performance Monitoring
 
 All `distrops` workflows natively output non-blocking scalar event files to a decoupled storage mount, enabling comprehensive experiment tracing without adding overhead inside the active model training loops.
 
@@ -123,9 +121,8 @@ tensorboard --logdir_spec=experiment:/mnt/d/distributed_work/cluster_storage/ray
 2. Open your web browser and navigate to `http://localhost:6006/` to monitor model training performance metrics 
 
 
----
 
-## 🔬 Repository Structure
+## Repository Structure
 
 ```text
 distrops/
@@ -146,7 +143,6 @@ distrops/
 └── README.md
 ```
 
----
 
 ## Contributing
 
