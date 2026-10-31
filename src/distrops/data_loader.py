@@ -4,6 +4,7 @@ from datasets import load_dataset
 from .utils import tokenize_batch
 from functools import partial
 from transformers import AutoTokenizer
+from .registry import DATASET_REGISTRY
 
 
 def get_data(config):
@@ -25,3 +26,11 @@ def get_data(config):
     max_steps_per_epoch = train_data.count() // batch_size
     return train_data_iterable, test_data_iterable, max_steps_per_epoch
         
+        
+@DATASET_REGISTRY.register("huggingface_dataset")
+def load_huggingface_dataset(config):
+    dataset_name = config.get("dataset_name")
+    dataset = load_dataset(dataset_name)
+    return dataset
+
+
