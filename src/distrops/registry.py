@@ -49,3 +49,6 @@ class Registry:
         
 DATASET_REGISTRY = Registry("DATASET_REGISTRY")
 MODEL_REGISTRY = Registry("MODEL_REGISTRY")
+
+
+registry = Registry()
