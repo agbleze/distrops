@@ -5,6 +5,7 @@ from .utils import tokenize_batch
 from functools import partial
 from transformers import AutoTokenizer
 from .registry import DATASET_REGISTRY
+import sklearn.datasets as sk_datasets
 
 
 def get_data(config):
@@ -34,3 +35,12 @@ def load_huggingface_dataset(config):
     return dataset
 
 
+@DATASET_REGISTRY.register("sklearn_dataset")
+def load_sklearn_dataset(config):
+    dataset_name = config.get("dataset_name")
+    if not hasattr(sk_datasets, dataset_name):
+        raise AttributeError(f"{dataset_name} is not a valid sklearn dataset in sklearn.datasets. Please check the dataset name.")
+    
+    dataset_builder = getattr(sk_datasets, dataset_name)
+    dataset = dataset_builder()
+    return dataset
