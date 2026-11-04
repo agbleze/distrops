@@ -40,6 +40,15 @@ class DeepLearningTrainTask:
             avg_train_loss = train_loss / train_steps if train_steps > 0 else 0.0
             train_acc = metric_func.compute()["accuracy"]
             metrics[f"epoch_{epoch + 1}"] = {"train_loss": avg_train_loss, "train_accuracy": train_acc}
+            
+            self.engine.model.eval()
+            with torch.no_grad():
+                eval_loss = 0.0
+                eval_steps = 0
+                
+                for batch in self.engine.test_data_iterable:
+                    outputs = self.engine.model(**batch)
+                    
 
 
 
