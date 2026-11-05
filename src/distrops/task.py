@@ -48,6 +48,7 @@ class DeepLearningTrainTask:
                 
                 for batch in self.engine.test_data_iterable:
                     outputs = self.engine.model(**batch)
+                    logits = outputs.logits if hasattr(outputs, "logits") else outputs
                     
 
 
