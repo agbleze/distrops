@@ -49,6 +49,8 @@ class DeepLearningTrainTask:
                 for batch in self.engine.test_data_iterable:
                     outputs = self.engine.model(**batch)
                     logits = outputs.logits if hasattr(outputs, "logits") else outputs
+                    preds = torch.argmax(logits, dim=-1).cpu().numpy()
+                    metric_func.add_batch(predictions=preds, references=batch["labels"].cpu().numpy())
                     
 
 
