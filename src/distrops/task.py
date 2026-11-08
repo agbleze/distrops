@@ -77,3 +77,21 @@ class DeepLearningTrainTask:
         return metric_result            
 
 
+class TabularTrainTask:
+    def __init__(self, engine, *args, **kwargs):
+        self.engine = engine
+        
+    def __call__(self, *args, **kwargs):
+        self.execute() 
+        
+    def execute(self):
+        X_train, y_train = self.train_data
+        X_test, y_test = self.test_data
+        
+        self.engine.model.fit(X_train, y_train)
+        eval_score = self.engine.model.score(X_test, y_test)
+        train_score = self.engine.model.score(X_train, y_train)
+        metrics = {"eval_loss": eval_score, "train_loss": train_score}
+        
+        ray.tune.report(metrics)
+    
