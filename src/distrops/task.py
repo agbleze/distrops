@@ -9,7 +9,6 @@ class DeepLearningTrainTask:
     def __call__(self, *args, **kwargs):
         return self.execute()
     
-    
     def execute(self):
         optimizer_func = registry.get(self.engine.config.get("optimizer_name"))
         metric_func = registry.get(self.engine.config.get("metric_name"))
@@ -78,5 +77,3 @@ class DeepLearningTrainTask:
         return metric_result            
 
 
-
-        
