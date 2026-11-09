@@ -12,4 +12,10 @@ class DecisionTreeWorkflow:
         
         
         
+class ExecutionEngine:
+    def __init__(self, config, listeners):
+        self.config = config
+        self.device = device
+        self.listeners = listeners or []
         
+                
