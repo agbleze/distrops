@@ -1,5 +1,6 @@
 from typing import Dict, Any, List, Callable
 import abc
+import torch
 
 
 class DistropsWorkflow(abc.ABC):
@@ -15,7 +16,7 @@ class DecisionTreeWorkflow:
 class ExecutionEngine:
     def __init__(self, config, listeners):
         self.config = config
-        self.device = device
+        self.device = config.get("device", "cuda" if torch.cuda.is_available() else "cpu")
         self.listeners = listeners or []
         
-                
+        data_loader_fn = DATA_REGISTRY.get(config.get("data_loader"))        
