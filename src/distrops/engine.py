@@ -73,3 +73,10 @@ class HuggingFaceDataWorkflow:
         raw_ds["test"].map(tokenize_batch, batched=True).to_parquet(test_path)
         
         return {"train_data_path": train_path, "test_data_path": test_path}
+
+
+@register_workflow("gradient_descent")
+class DeepLearningWorkflow:
+    
+    def __call__(self, *args, **kwds):
+        pass
