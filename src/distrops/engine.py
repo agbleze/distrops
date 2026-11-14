@@ -78,5 +78,56 @@ class HuggingFaceDataWorkflow:
 @register_workflow("gradient_descent")
 class DeepLearningWorkflow:
     
-    def __call__(self, *args, **kwds):
-        pass
+    def __call__(self, train_data_path: str, test_data_path: str, 
+                 model_registry_key: str, 
+                 epochs: int =3,
+                 batch_size=16,
+                 *args, **kwargs
+                 ):
+        train_stream = ray.data.read_parquet(train_data_path).iter_torch_batches(batch_size=batch_size)
+        test_stream = ray.data.read_parquet(test_data_path).iter_torch_batches(batch_size=batch_size)
+        
+        
+        ...
+        best_checkpoint = ""
+        return {"checkpoint_point": best_checkpoint, "eval_loss": inf}
+        
+        
+
+class PipelineOrchestrator:
+    def __init__(self, global_config: dict, workflow_registry: dict, ):
+        self.global_config = global_config
+        self.workflow_registry = workflow_registry
+        self.pipeline_state = {**global_config}
+        
+    def run(self):
+        validate_pipeline_dag(self.global_config, self.workflow_registry)
+        
+        workflows = self.global_config.get("workflows", [])
+        final_output = {}
+        
+        for idx, step_cfg in enumerate(workflows):
+            name = step_cfg.get("name")
+            params = step_cfg.get("params")
+            resources = step_cfg.get("resources", {"cpu": 1, "gpu": 0.0})
+            
+            workflow_cls = self.workflow_registry.get("name")
+            execution_context = {**self.pipeline_state, **params}
+            
+            print(f"Launching Stage {idx + 1}/{len(workflows)}: '{name}'",
+                  f"[Allocated: {resources.get('cpu'), 1} CPU, {resources.get('gpu', 0.0)} GPU]"
+                  )
+            
+            configured_remote_task = _execute_isolated_stage.options(num_cpus=resources.get("cpu",1),
+                                                                     num_gpus=resources.get("gpu", 0.0)
+                                                                     )
+            stage_output = ray.get(configured_remote_task.remote(workflow_cls, execution_context))
+            
+            self.pipeline_state.update(stage_output)
+            self.pipeline_state[f"stage_{idx}_{name}"] = stage_output
+            final_output = stage_output
+        return final_output
+    
+    
+ 
+    
