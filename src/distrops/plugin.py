@@ -18,3 +18,14 @@ def load_plugins(plugin_paths: List[str]) -> None:
             _load_from_file_path(target)
         else:
             _load_from_module_name(target)
+            
+            
+def _load_from_module_name(module_name: str):
+    try:
+        importlib.import_module(module_name)
+        print(f"Loaded plugin module: {module_name}")
+    except ImportError as e:
+        raise ImportError(
+            f"Failed to import plugin module '{module_name}'."
+            f"Ensure it is installed or in PYTHONPATH. Original error: {e}"
+        ) from e
