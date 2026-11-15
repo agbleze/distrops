@@ -7,6 +7,7 @@ import os
 from datasets import load_dataset
 from transformers import AutoTokenizer
 import inspect
+from plugin import load_plugins
 
 class DistropsWorkflow(abc.ABC):
     @abc.abstractmethod
@@ -31,7 +32,9 @@ class ExecutionEngine:
 
 
 @ray.remote
-def _execute_isolated_stage(workflow_cls: Any, execution_context):
+def _execute_isolated_stage(workflow_cls: Any, execution_context) -> Dict[str, Any]:
+    load_plugins(execution_context.get("plugins", []))
+    
     workflow_instance = workflow_cls()
     args, kwargs = get_expected_arguments(workflow_instance, execution_context)
     output = workflow_instance(*args, **kwargs)
@@ -82,11 +85,22 @@ class DeepLearningWorkflow:
                  model_registry_key: str, 
                  epochs: int =3,
                  batch_size=16,
+                 drop_last=False,
                  *args, **kwargs
                  ):
-        train_stream = ray.data.read_parquet(train_data_path).iter_torch_batches(batch_size=batch_size)
-        test_stream = ray.data.read_parquet(test_data_path).iter_torch_batches(batch_size=batch_size)
+        train_ds = ray.data.read_parquet(train_data_path)
+        train_stream = train_ds.iter_torch_batches(batch_size=batch_size)
         
+        test_ds = ray.data.read_parquet(test_data_path)
+        test_stream = test_ds.iter_torch_batches(batch_size=batch_size)
+        
+        total_samples = train_ds.count()
+        if drop_last:
+            max_steps_per_epoch = total_samples // batch_size
+        else:
+            max_steps_per_epoch = math.ceil(total_samples / batch_size)
+            
+        max_steps = max_steps_per_epoch * epochs
         
         ...
         best_checkpoint = ""
