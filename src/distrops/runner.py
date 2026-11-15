@@ -25,6 +25,7 @@ def parse_args():
 def train_hyperparameter_search(config_path):
     config = load_config_file(config_path=config_path)
     infra_config = config.get("infrastructure", {})
+    working_dir = infra_config.get("working_dir")
     model_config = config.get("model", {})
     dataset_config = config.get("dataset", {})
     storage_path = infra_config.get("storage_path") 
@@ -60,6 +61,7 @@ def train_hyperparameter_search(config_path):
     ray.init(ignore_reinit_error=True,
              _temp_dir=temp_dir,
              object_spilling_directory=directory_path,
+             runtime_env={"working_dir": working_dir} if working_dir else None
             )
     
     print("Configuring scheduler")
