@@ -114,6 +114,8 @@ class PipelineOrchestrator:
         self.workflow_registry = workflow_registry
         self.pipeline_state = {**global_config}
         
+        load_plugins(self.global_config.get("plugins", []))
+        
     def run(self):
         validate_pipeline_dag(self.global_config, self.workflow_registry)
         
