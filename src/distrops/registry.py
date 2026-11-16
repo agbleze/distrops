@@ -65,7 +65,8 @@ class Registry:
             module = importlib.import_module(module_path)
             return getattr(module, attr_name)
         
-        available = list(self._registry.get(registry_name, {}).keys())
+        available = self.list_available_registry_items(registry_name=registry_name)
+        
         
         raise KeyError(
             f"{name_or_path} not found in {registry_name} registry and is not a valid import path. "
@@ -73,8 +74,13 @@ class Registry:
         )
         
         
-    def list_available(self) -> List:
+    def list_available_registry(self) -> List:
         return list(self._registry.keys())
+    
+    def list_available_registry_items(self, registry_name: None):
+        registry_name = self.registry_name if not registry_name else registry_name
+        registry_items = list(self._registry.get(registry_name, {}).keys())
+        return registry_items
         
         
 DATASET_REGISTRY = Registry("DATASET_REGISTRY")
