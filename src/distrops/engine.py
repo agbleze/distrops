@@ -10,6 +10,7 @@ import inspect
 from plugin import load_plugins
 import math
 from validator import validate_pipeline_dag
+from .registry import registry
 
 class DistropsWorkflow(abc.ABC):
     @abc.abstractmethod
@@ -27,7 +28,7 @@ class ExecutionEngine:
         self.device = config.get("device", "cuda" if torch.cuda.is_available() else "cpu")
         self.listeners = listeners or []
         
-        data_loader_fn = DATA_REGISTRY.get(config.get("data_loader"))  
+        data_loader_fn = registry.get(config.get("data_loader"))  
         
         
         
@@ -55,7 +56,7 @@ def register_workflow(name: str):
     return decorator
 
 
-@register_worflow("prepare_huggingface_data")
+@registry.register(name="prepare_huggingface_data", registry_name="workflow")
 class HuggingFaceDataWorkflow:
     
     def __call__(self, dataset_name, tokenizer_name, output_dir, max_length: int = 128):
@@ -80,7 +81,7 @@ class HuggingFaceDataWorkflow:
         return {"train_data_path": train_path, "test_data_path": test_path}
 
 
-@register_workflow("gradient_descent")
+@registry.register(name="gradient_descent", registry_name="workflow")
 class DeepLearningWorkflow:
     
     def __call__(self, train_data_path: str, test_data_path: str, 
