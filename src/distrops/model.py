@@ -1,9 +1,9 @@
-from .registry import MODEL_REGISTRY
+from .registry import registry
 from .utils import get_expected_arguments
 import torchvision.models as models
 import sklearn.ensemble as ensemble
 
-@MODEL_REGISTRY.register(name="huggingface_sequence_classification")
+@registry.register(name="huggingface_sequence_classification")
 def hf_reflective_factory(config: dict):
     from transformers import AutoModelForSequenceClassification
     
@@ -14,7 +14,7 @@ def hf_reflective_factory(config: dict):
 
 
 
-@MODEL_REGISTRY.register(name="torchvision_image_classification")
+@registry.register(name="torchvision_image_classification")
 def torchvision_image_classification_factory(config: dict):
     model_name = config.get("model_name", "resnet18")
     if not hasattr(models, model_name):
@@ -26,7 +26,7 @@ def torchvision_image_classification_factory(config: dict):
     return model
 
 
-@MODEL_REGISTRY.register(name="sklearn_ensemble")
+@registry.register(name="sklearn_ensemble")
 def register_sklearn_ensemble_models(config: dict):
     model_name = config.get("model_name")
     if not model_name:
@@ -41,7 +41,7 @@ def register_sklearn_ensemble_models(config: dict):
     return model
     
     
-@MODEL_REGISTRY.register(name="hugginhface_audio_classification")
+@registry.register(name="hugginhface_audio_classification")
 def register_huggingface_audio_classification(config: dict):
     from transformers import AutoModelForAudioClassification
     
