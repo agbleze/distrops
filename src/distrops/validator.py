@@ -54,16 +54,52 @@ def _resolve_target_callable(callable_obj: Any) -> Any:
     return callable_obj
 
     
-def validate_pipeline_dag(global_config: dict, workflow_registry) -> bool:
+def validate_pipeline_dag(global_config: dict, registry_name="workflows") -> bool:
     workflows = global_config.get("workflows", [])
     if not workflows:
         raise PipelineValidationError(f"Configuration manifest contains no 'workflows' steps")
         
     available_keys = set(global_config.keys())
+    strict_validation = True
     
     for idx, step in enumerate(workflows):
         step_name = step.get("name")
         step_params = step.get("params", {})
+        stage_label = f"Stage {idx + 1} ('{step_name}')"
+        
+        try:
+            workflow_cls = registry.get(name_or_path=step_name, registry_name=registry_name)
+        except (KeyError, ImportError, AttributeError) as e:
+            raise PipelineValidationError(f"{stage_label} failed workflow resolution: {e}") from e
+        
+        stage_input_keys = available_keys.union(set(step_params.keys()))
+        
+        if strict_validation:
+            target_sig = _resolve_target_callable(workflow_cls)
+            _check_callable_signature(target_sig, stage_input_keys, stage_label)
+            
+        known_categories = set(registry.keys())
+        for param_key, param_val in step_params.items():
+            if not isinstance(param_val, str):
+                continue
+            is_registered_category = param_key in known_categories
+            is_dot_path = "." in param_val and not param_val.startswith(("/", "./", "../"))    
+            
+            if is_registered_category or is_dot_path:
+                try:
+                    component_callable = registry.get(param_key, param_val)
+                except (KeyError, ImportError, AttributeError) as e:
+                    raise PipelineValidationError(
+                        f"Contract Breach in {stage_label} -> '{param_key}={param_val}': {e}"
+                    ) from e
+                
+                if strict_validation:
+                    target_sig = _resolve_target_callable(component_callable) 
+                    _check_callable_signature(
+                        target_sig, stage_input_keys,
+                        f"{stage_label} -> {param_key}='{param_val}'"
+                    )   
+        
         
         if step_name not in workflow_registry:
             raise PipelineValidationError(
