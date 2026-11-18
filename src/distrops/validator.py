@@ -38,6 +38,21 @@ def _check_callable_signature(callable_obj: Any, available_keys: set,
         )
 
 
+def _resolve_target_callable(callable_obj: Any) -> Any:
+    """Returns __call__ if inspecting a class instance, or __init__ if inspecting a class
+
+    Args:
+        callable_obj (Any): _description_
+
+    Returns:
+        Any: _description_
+    """
+    if inspect.isclass(callable_obj):
+        return callable_obj.__init__
+    if callable(callable_obj) and not inspect.isfunction(callable_obj) and not inspect.ismethod(callable_obj):
+        return callable_obj.__call__
+    return callable_obj
+
     
 def validate_pipeline_dag(global_config: dict, workflow_registry) -> bool:
     workflows = global_config.get("workflows", [])
