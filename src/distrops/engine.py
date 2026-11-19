@@ -135,7 +135,6 @@ class PipelineOrchestrator:
             params = step_cfg.get("params")
             resources = step_cfg.get("resources", {"cpu": 1, "gpu": 0.0})
             
-            workflow_cls = registry.get(name_or_path=name, registry_name=self.registry_name)
             execution_context = {**self.pipeline_state, **params}
             
             print(f"Launching Stage {idx + 1}/{len(workflows)}: '{name}'",
@@ -145,7 +144,7 @@ class PipelineOrchestrator:
             configured_remote_task = _execute_isolated_stage.options(num_cpus=resources.get("cpu",1),
                                                                      num_gpus=resources.get("gpu", 0.0)
                                                                      )
-            stage_output = ray.get(configured_remote_task.remote(workflow_cls, execution_context))
+            stage_output = ray.get(configured_remote_task.remote(name, execution_context, self.registry_name))
             
             self.pipeline_state.update(stage_output)
             self.pipeline_state[f"stage_{idx}_{name}"] = stage_output
