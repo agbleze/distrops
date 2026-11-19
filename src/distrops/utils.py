@@ -4,6 +4,9 @@ import torch
 import yaml
 import inspect
 from typing import Callable, Any, Dict, Tuple
+import functools
+from distrops.registry import registry
+
 
 def tokenize_batch(batch, tokenizer, device):
     text = batch["text"]
@@ -68,4 +71,26 @@ def get_expected_arguments(func, config):
 
 
 
-
+def resolve_config_targets(config_node: Any, category_hint: str = "components") -> Any:
+    if isinstance(config_node, dict):
+        resolved_dict = {
+            k: resolve_config_targets(v, category_hint=k)
+            for k,v in config_node.items()
+        }
+        
+        if "_target_" in resolved_dict:
+            target_name = resolved_dict.pop("_target_")
+            is_partial = resolved_dict.pop("_partial_", False)
+            
+            callable_obj = registry.get(registry_name=category_hint, name_or_path=target_name)
+            args, kwargs = get_expected_arguments(callable_obj, resolved_dict)
+            
+            if is_partial:
+                return functools.partial(callable_obj, *args, **kwargs)
+            
+            return callable_obj(*args, **kwargs)
+        return resolved_dict
+    
+    if isinstance(config_node, list):
+        return [resolve_config_targets(item, category_hint) for item in config_node]
+    return config_node
