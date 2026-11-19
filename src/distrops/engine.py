@@ -2,7 +2,7 @@ from typing import Dict, Any, List, Callable, TypedDict, get_type_hints
 import abc
 import torch
 import ray
-from utils import get_expected_arguments
+from utils import get_expected_arguments, resolve_config_targets
 import os
 from datasets import load_dataset
 from transformers import AutoTokenizer
@@ -35,11 +35,16 @@ class ExecutionEngine:
 
 
 @ray.remote
-def _execute_isolated_stage(workflow_cls: Any, execution_context) -> Dict[str, Any]:
+def _execute_isolated_stage(workflow_name: str, execution_context: dict, registry_name="workflows") -> Dict[str, Any]:
+    """
+    Executes a single workflow stage inside a dynamically sized ray worker process.
+    Loads external plugins and recursively instantiates '_target_' configuration.
+    """
     load_plugins(execution_context.get("plugins", []))
-    
+    workflow_cls = registry.get(name_or_path=workflow_name, registry_name=registry_name)
     workflow_instance = workflow_cls()
-    args, kwargs = get_expected_arguments(workflow_instance, execution_context)
+    instantiated_context = resolve_config_targets(execution_context, registry_name=registry_name)
+    args, kwargs = get_expected_arguments(workflow_instance, instantiated_context)
     output = workflow_instance(*args, **kwargs)
     
     if not isinstance(output, dict):
