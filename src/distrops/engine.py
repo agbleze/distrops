@@ -112,15 +112,15 @@ class DeepLearningWorkflow:
         
 
 class PipelineOrchestrator:
-    def __init__(self, global_config: dict, workflow_registry: dict, ):
+    def __init__(self, global_config: dict, registry_name: str = "workflows", ):
         self.global_config = global_config
-        self.workflow_registry = workflow_registry
+        self.registry_name = registry_name
         self.pipeline_state = {**global_config}
         
         load_plugins(self.global_config.get("plugins", []))
         
     def run(self):
-        validate_pipeline_dag(self.global_config, self.workflow_registry)
+        validate_pipeline_dag(self.global_config)
         
         workflows = self.global_config.get("workflows", [])
         final_output = {}
@@ -130,7 +130,7 @@ class PipelineOrchestrator:
             params = step_cfg.get("params")
             resources = step_cfg.get("resources", {"cpu": 1, "gpu": 0.0})
             
-            workflow_cls = self.workflow_registry.get("name")
+            workflow_cls = registry.get(name_or_path=name, registry_name=self.registry_name)
             execution_context = {**self.pipeline_state, **params}
             
             print(f"Launching Stage {idx + 1}/{len(workflows)}: '{name}'",
