@@ -8,9 +8,11 @@ class PipelineValidationError(Exception):
 FRAMEWORK_INJECTED_PARAMS = {"self", "config", "params", "model_parameters"}
 
 
-def _check_callable_signature(callable_obj: Any, available_keys: set,
+def _check_callable_signature(callable_obj: Any, 
+                              available_keys: set,
                               stage_label: str,
-                              ignore_params: set = None
+                              ignore_params: set = None,
+                              is_partial: bool = False
                               ) -> None:
     """Inspects a callable's required parameters against available configuration
 
@@ -21,13 +23,21 @@ def _check_callable_signature(callable_obj: Any, available_keys: set,
         ignore_params (set, optional): _description_. Defaults to None.
     """
     ignore_params = ignore_params or FRAMEWORK_INJECTED_PARAMS
-    sig = inspect.signature(callable_obj)
+    target_func = _resolve_target_callable(callable_obj)
+    sig = inspect.signature(target_func)
     missing_params = []
     for param_name, param in sig.parameters.items():
         if param_name in ignore_params:
             continue
-        if param.kind in (inspect.Parameter.VAR_POSITIONAL, inspect.Parameter.VAR_KEYWORD, inspect.Parameter.POSITIONAL_OR_KEYWORD, inspect.Parameter.KEYWORD_ONLY):
+        if param.kind in (inspect.Parameter.VAR_POSITIONAL, inspect.Parameter.VAR_KEYWORD, inspect.Parameter.KEYWORD_ONLY):
             continue
+        
+        if is_partial and param.kind in (
+                                            inspect.Parameter.POSITIONAL_ONLY,
+                                            inspect.Parameter.POSITIONAL_OR_KEYWORD,
+                                        ) and param.default is inspect.Parameter.empty:
+            continue
+        
         if param.default is inspect.Parameter.empty and param_name not in available_keys:
             missing_params.append(param_name)
             
@@ -53,7 +63,33 @@ def _resolve_target_callable(callable_obj: Any) -> Any:
         return callable_obj.__call__
     return callable_obj
 
+def _validate_nested_targets(node: Any, registry_name: str, stage_label) -> None:
+    if isinstance(node, dict):
+        for k, v in node.items():
+            if k != "_target_":
+                _validate_nested_targets(node=v, registry_name=k, stage_label=stage_label)
+                
+        if "_target_" in node:
+            target_name = node["_target_"]
+            is_partial = bool(node.get("_partial_", False))
+            try:
+                callable_obj = registry.get(name_or_path=target_name, registry_name=registry_name)
+            except (KeyError, ImportError, AttributeError) as e:
+                raise PipelineValidationError(
+                    f"Contract Breach in {stage_label} -> '{registry_name}._target_={target_name}': {e}"
+                ) from e
+                
+            provided_keys = {k for k in node.keys() if k not in ("_target_", "_partial_")}
+            _check_callable_signature(callable_obj=callable_obj, available_keys=provided_keys,
+                                      stage_label=f"{stage_label} -> {registry_name}('{target_name}')",
+                                      is_partial=is_partial
+                                      )
+        
+    elif isinstance(node, list):
+        for item in node:
+            _validate_nested_targets(item, registry_name=registry_name, stage_label=stage_label)        
     
+        
 def validate_pipeline_dag(global_config: dict, registry_name="workflows") -> bool:
     workflows = global_config.get("workflows", [])
     if not workflows:
@@ -74,31 +110,34 @@ def validate_pipeline_dag(global_config: dict, registry_name="workflows") -> boo
         
         stage_input_keys = available_keys.union(set(step_params.keys()))
         
+        _validate_nested_targets(step_params, registry_name="components", stage_label=stage_label)
+        
+        
         if strict_validation:
             target_sig = _resolve_target_callable(workflow_cls)
             _check_callable_signature(target_sig, stage_input_keys, stage_label)
             
-        known_categories = set(registry.keys())
-        for param_key, param_val in step_params.items():
-            if not isinstance(param_val, str):
-                continue
-            is_registered_category = param_key in known_categories
-            is_dot_path = "." in param_val and not param_val.startswith(("/", "./", "../"))    
+        # known_categories = set(registry.keys())
+        # for param_key, param_val in step_params.items():
+        #     if not isinstance(param_val, str):
+        #         continue
+        #     is_registered_category = param_key in known_categories
+        #     is_dot_path = "." in param_val and not param_val.startswith(("/", "./", "../"))    
             
-            if is_registered_category or is_dot_path:
-                try:
-                    component_callable = registry.get(param_key, param_val)
-                except (KeyError, ImportError, AttributeError) as e:
-                    raise PipelineValidationError(
-                        f"Contract Breach in {stage_label} -> '{param_key}={param_val}': {e}"
-                    ) from e
+        #     if is_registered_category or is_dot_path:
+        #         try:
+        #             component_callable = registry.get(registry_name=param_key, name_or_path=param_val)
+        #         except (KeyError, ImportError, AttributeError) as e:
+        #             raise PipelineValidationError(
+        #                 f"Contract Breach in {stage_label} -> '{param_key}={param_val}': {e}"
+        #             ) from e
                 
-                if strict_validation:
-                    target_sig = _resolve_target_callable(component_callable) 
-                    _check_callable_signature(
-                        target_sig, stage_input_keys,
-                        f"{stage_label} -> {param_key}='{param_val}'"
-                    )   
+        #         if strict_validation:
+        #             target_sig = _resolve_target_callable(component_callable) 
+        #             _check_callable_signature(
+        #                 target_sig, stage_input_keys,
+        #                 f"{stage_label} -> {param_key}='{param_val}'"
+        #             )   
         
         call_target = workflow_cls.__call__ if inspect.isclass(workflow_cls) else workflow_cls
         type_hints = get_type_hints(call_target)
