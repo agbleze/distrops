@@ -2,15 +2,16 @@ from typing import Dict, Any, List, Callable, TypedDict, get_type_hints
 import abc
 import torch
 import ray
-from utils import get_expected_arguments, resolve_config_targets
+from distrops.utils import get_expected_arguments, resolve_config_targets
 import os
 from datasets import load_dataset
 from transformers import AutoTokenizer
 import inspect
-from plugin import load_plugins
+from .plugin import load_plugins
 import math
-from validator import validate_pipeline_dag
-from .registry import registry
+from distrops.validator import validate_pipeline_dag
+from distrops.registry import registry
+
 
 class DistropsWorkflow(abc.ABC):
     @abc.abstractmethod
