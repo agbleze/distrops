@@ -1,6 +1,6 @@
 import inspect
-from typing import get_type_hints
-from registry import registry
+from typing import get_type_hints, Any
+from .registry import registry
  
 class PipelineValidationError(Exception):
     pass
