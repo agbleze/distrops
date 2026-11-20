@@ -36,9 +36,10 @@ class Registry:
             Callable: Function or class that is being registered in the registry.
         """
         registry_name = self.registry_name if not registry_name else registry_name
+        self.name = name
         
         def decorator(cls_or_func: Any) -> Callable:
-            name = name or cls_or_func.__name__
+            name = self.name or cls_or_func.__name__
             self.register_component(name=name, cls=cls_or_func, registry_name=registry_name)
             return cls_or_func
         return decorator
