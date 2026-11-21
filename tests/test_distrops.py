@@ -5,7 +5,7 @@
 
 import pytest
 import ray
-from typing import TypedDict
+from typing import TypedDict, Callable
 import textwrap
 from distrops.utils import get_expected_arguments, resolve_config_targets
 from distrops.engine import PipelineOrchestrator
