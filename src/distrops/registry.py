@@ -22,8 +22,11 @@ class Registry:
             None: _description_
         """
         registry_name = self.registry_name if not registry_name else registry_name
-        if name in self._registry[registry_name]:
-            raise ValueError(f"{name} is already in {registry_name} registry")
+        if registry_name in self.list_available_registry(): #self._registry[registry_name]:
+            if name in self._registry[registry_name]:
+                raise ValueError(f"{name} is already in {registry_name} registry")
+        else:
+            self._registry[registry_name] = {}
         self._registry[registry_name][name] = cls
         
     def register(self, name: str = None, registry_name: str = None) -> Callable:
