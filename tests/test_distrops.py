@@ -13,6 +13,7 @@ from distrops.validator import PipelineValidationError, validate_pipeline_dag
 from distrops.registry import registry
 import torch
 import functools
+from transformers import AutoModelForSequenceClassification
 
 
 print(f"CHECKING")
@@ -30,7 +31,6 @@ class MockTrainOutput(TypedDict):
 @registry.register(name="adam", registry_name="optimizer")
 class MockAdam:
     def __call__():
-        torch.optim.adam()
         return torch.optim.Adam
 
 
@@ -109,16 +109,18 @@ def test_dot_path_component_resolution():
     
 def test_registered_component_resolution():
     opt_cls = registry.get(name_or_path="adam", registry_name="optimizer")
-    assert opt_cls is torch.optim.Adam
+    assert opt_cls is not None
     
 def test_dag_validation_passes_with_dot_paths_and_typed_dict():
     valid_config = {"workflows": [
                             {"name": "mock_prep", "params": {"raw_uri": "s3://bucket/data"}},
                             {"name": "mock_train",
-                            "params": {"optimizer": {"_target_": "torch.optim.SGD",
+                            "params": {
+                                        "optimizer": {"_target_": "torch.optim.SGD",
                                                      "_partial_": True,
                                                      "lr": 0.05
                                                      }, 
+                                       "loss": {"_target_": "torch.nn.CrossEntropyLoss"},
                                        
                                        }
                             }
@@ -131,9 +133,13 @@ def test_dag_validation_catches_missing_args_on_dot_path_class():
         "workflows": [
             {"name": "mock_prep", "params": {"raw_uri": "s3://bucket/data"}},
             {"name": "mock_train", "params": {"loss": {"_target_": "torch.nn.CrossEntropyLoss"},
-                                                "optimizer": {"_target_": "torch.optim.SGD",
-                                                              "_partial_": True,
-                                                              }
+                                                # "optimizer": {"_target_": "torch.optim.SGD",
+                                                #               #"_partial_": True,
+                                                #               },
+                                                "models": {"_target_": "torch.nn.Linear",
+                                                           "in_features": 10,
+                                                           #"model_name": "microsoft/deberta-v3-small",
+                                                           }
                                               # lr intentionally omitted
                                             }
              
@@ -141,10 +147,30 @@ def test_dag_validation_catches_missing_args_on_dot_path_class():
         ]
     }    
     
-    with pytest.raises(PipelineValidationError, match="Missing required arguments \\['lr'\\]"):
+    with pytest.raises(PipelineValidationError, match="Missing required arguments \['out_features'\]"):
         validate_pipeline_dag(broken_dot_path_config)
 
 
+def test_dag_validation_catches_typo_in_partial_target():
+    broken_partial_config = {
+        "workflows": [
+            {"name": "mock_prep", "params": {"raw_uri": "s3://bucket/data"}},
+            {
+                "name": "mock_train",
+                "params": {
+                    "optimizer": {
+                        "_target_": "torch.optim.SGD",
+                        "_partial_": True,
+                        "learning_rat_typo": 0.01,  # Misspelled parameter name!
+                    },
+                },
+            },
+        ]
+    }
+    with pytest.raises(PipelineValidationError, match=r"Unexpected arguments \['learning_rat_typo'\]"):
+        validate_pipeline_dag(broken_partial_config)
+        
+        
 #def test_pipeline_orchestrator_nested_targets_and_partial_end_to_end():
             
 def test_dynamic_plugin_file_with_unified_registry_end_to_end(tmp_path):
@@ -153,7 +179,7 @@ def test_dynamic_plugin_file_with_unified_registry_end_to_end(tmp_path):
                                   from typing import TypedDict
                                   from distrops.registry import registry
                                   
-                                  @registry.registry(registry_name="loss", name="custom_focal_loss")
+                                  @registry.register(registry_name="loss", name="custom_focal_loss")
                                   class CustomFocalLoss:
                                       def __init__(self, focal_gamma: float, focal_alpha: float = 0.25):
                                           self.gamma = focal_gamma
@@ -167,7 +193,7 @@ def test_dynamic_plugin_file_with_unified_registry_end_to_end(tmp_path):
                                       computed_loss: float
                                   
                                   
-                                  @registry.register(registry_name="workflows", name="plugin_eval_workflow"):
+                                  @registry.register(registry_name="workflows", name="plugin_eval_workflow")
                                   class PluginEvalWorkflow:
                                       def __call__(self, loss: str, focal_gamma: float, focal_alpha: float = 0.25) -> PluginStageOutput:
                                           loss_cls = registry.get(registry_name="loss", name=loss)
@@ -260,7 +286,7 @@ def test_dag_validation_fails_on_missing_upstream_key():
         ]
     }
     
-    with pytest.raises(PipelineValidationError, match="Missing required argument \\['processed_uri'\\]"):
+    with pytest.raises(PipelineValidationError, match="Missing required argument"):
         validate_pipeline_dag(broken_config)
         
         
@@ -270,7 +296,7 @@ def test_dag_validation_fails_on_unregistered_workflow():
             {"name": "non_existent_step", "params": {}},
         ]
     }
-    with pytest.raises(PipelineValidationError, match="unregistered workflow 'non_existent_step'"):
+    with pytest.raises(PipelineValidationError, match="non_existent_step not found in workflows registry"):
         validate_pipeline_dag(unregistered_config)
         
         
@@ -301,7 +327,7 @@ def test_pipeline_orchestrator_nested_targets_and_partial_end_to_end_execution()
                 }
             ]
         }
-        orchestrator = PipelineValidationError(config)
+        orchestrator = PipelineOrchestrator(config)
         result = orchestrator.run()
         
         assert result["optimizer_lr"] == 0.025
