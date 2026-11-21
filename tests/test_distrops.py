@@ -7,12 +7,15 @@ import pytest
 import ray
 from typing import TypedDict
 import textwrap
-from ..src.distrops.utils import get_expected_arguments, resolve_config_targets
-from ..src.distrops.engine import PipelineOrchestrator
-from ..src.distrops.validator import PipelineValidationError, validate_pipeline_dag
-from ..src.distrops.registry import registry
+from distrops.utils import get_expected_arguments, resolve_config_targets
+from distrops.engine import PipelineOrchestrator
+from distrops.validator import PipelineValidationError, validate_pipeline_dag
+from distrops.registry import registry
 import torch
 import functools
+
+
+print(f"CHECKING")
 
 class MockPrepOutput(TypedDict):
     processed_uri: str
@@ -32,7 +35,7 @@ class MockAdam:
 
 
 
-@registry.registry(name="mock_prep", registry_name="workflows")
+@registry.register(name="mock_prep", registry_name="workflows")
 class MockPrepWorkflow:
     def __call__(self, raw_uri: str, raw_features: int = 8, num_classes: int = 3, scale: int = 4) -> MockPrepOutput:
         return {"processed_uri": f"{raw_uri}_scaled_{scale}",
