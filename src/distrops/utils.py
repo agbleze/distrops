@@ -6,6 +6,7 @@ import inspect
 from typing import Callable, Any, Dict, Tuple
 import functools
 from distrops.registry import registry
+import importlib
 
 
 def tokenize_batch(batch, tokenizer, device):
@@ -32,27 +33,43 @@ def load_config_file(config_path):
         config = yaml.safe_load(f)
     return config
 
-
-
 def get_expected_arguments(func, config):
     signature = inspect.signature(func)
-    
+
     positional_args = []
-    keyword_kwargs = []
-    
-    has_var_keyword = any(p.kind == inspect.Parameter.VAR_KEYWORD for p in signature.parameters.values())
-    
-    bound_args = signature.bind_partial(**{k: v for k, v in config.items() if k in signature.parameters or has_var_keyword})
-    
+    keyword_kwargs = {}
+
+    has_var_keyword = any(
+        p.kind == inspect.Parameter.VAR_KEYWORD for p in signature.parameters.values()
+    )
+
+    pos_only_vals = [
+        config[name]
+        for name, param in signature.parameters.items()
+        if param.kind == inspect.Parameter.POSITIONAL_ONLY and name in config
+    ]
+
+    kw_vals = {
+        k: v
+        for k, v in config.items()
+        if (
+            (k in signature.parameters and signature.parameters[k].kind != inspect.Parameter.POSITIONAL_ONLY)
+            or (k not in signature.parameters and has_var_keyword)
+        )
+    }
+
+    bound_args = signature.bind_partial(*pos_only_vals, **kw_vals)
+
     for param_name, param in signature.parameters.items():
         if param_name not in bound_args.arguments:
             if param.default != inspect.Parameter.empty:
                 bound_args.arguments[param_name] = param.default
-                
+
     for param_name, value in bound_args.arguments.items():
         param = signature.parameters.get(param_name)
         if param is None:
             keyword_kwargs[param_name] = value
+            continue
 
         if param.kind == inspect.Parameter.POSITIONAL_ONLY:
             positional_args.append(value)
@@ -66,15 +83,14 @@ def get_expected_arguments(func, config):
                 keyword_kwargs.update(value)
         else:
             keyword_kwargs[param_name] = value
-            
+
     return tuple(positional_args), keyword_kwargs
 
 
-
-def resolve_config_targets(config_node: Any, category_hint: str = "components") -> Any:
+def resolve_config_targets(config_node: Any, registry_name: str = "components") -> Any:
     if isinstance(config_node, dict):
         resolved_dict = {
-            k: resolve_config_targets(v, category_hint=k)
+            k: resolve_config_targets(v, registry_name=k)
             for k,v in config_node.items()
         }
         
@@ -82,7 +98,7 @@ def resolve_config_targets(config_node: Any, category_hint: str = "components") 
             target_name = resolved_dict.pop("_target_")
             is_partial = resolved_dict.pop("_partial_", False)
             
-            callable_obj = registry.get(registry_name=category_hint, name_or_path=target_name)
+            callable_obj = registry.get(registry_name=registry_name, name_or_path=target_name)
             args, kwargs = get_expected_arguments(callable_obj, resolved_dict)
             
             if is_partial:
@@ -92,5 +108,7 @@ def resolve_config_targets(config_node: Any, category_hint: str = "components") 
         return resolved_dict
     
     if isinstance(config_node, list):
-        return [resolve_config_targets(item, category_hint) for item in config_node]
+        return [resolve_config_targets(item, registry_name) for item in config_node]
     return config_node
+
+
