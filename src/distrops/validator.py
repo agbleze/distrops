@@ -5,7 +5,8 @@ from .registry import registry
 class PipelineValidationError(Exception):
     pass
 
-FRAMEWORK_INJECTED_PARAMS = {"self", "config", "params", "model_parameters"}
+FRAMEWORK_INJECTED_PARAMS = {"self", "config", "params", 
+                             "model_parameters"}
 
 
 def _check_callable_signature(callable_obj: Any, 
@@ -25,18 +26,28 @@ def _check_callable_signature(callable_obj: Any,
     ignore_params = ignore_params or FRAMEWORK_INJECTED_PARAMS
     target_func = _resolve_target_callable(callable_obj)
     sig = inspect.signature(target_func)
+    has_var_keyword = any(p.kind == inspect.Parameter.VAR_KEYWORD for p in sig.parameters.values())
+    
+    if is_partial:
+        if not has_var_keyword:
+            invalid_keys = [k for k in available_keys if k not in sig.parameters]
+            if invalid_keys:
+                raise PipelineValidationError(
+                    f"Contract Breach in {stage_label}: Unexpected arguments {invalid_keys} for partial target."
+                )
+
     missing_params = []
     for param_name, param in sig.parameters.items():
         if param_name in ignore_params:
             continue
-        if param.kind in (inspect.Parameter.VAR_POSITIONAL, inspect.Parameter.VAR_KEYWORD, inspect.Parameter.KEYWORD_ONLY):
+        if param.kind in (inspect.Parameter.VAR_POSITIONAL, inspect.Parameter.VAR_KEYWORD):
             continue
         
-        if is_partial and param.kind in (
-                                            inspect.Parameter.POSITIONAL_ONLY,
-                                            inspect.Parameter.POSITIONAL_OR_KEYWORD,
-                                        ) and param.default is inspect.Parameter.empty:
-            continue
+        # if is_partial and param.kind in (
+        #                                     inspect.Parameter.POSITIONAL_ONLY,
+        #                                     inspect.Parameter.POSITIONAL_OR_KEYWORD,
+        #                                 ) and param.default is inspect.Parameter.empty:
+        #     continue
         
         if param.default is inspect.Parameter.empty and param_name not in available_keys:
             missing_params.append(param_name)
@@ -112,34 +123,11 @@ def validate_pipeline_dag(global_config: dict, registry_name="workflows") -> boo
         
         _validate_nested_targets(step_params, registry_name="components", stage_label=stage_label)
         
-        
-        if strict_validation:
-            target_sig = _resolve_target_callable(workflow_cls)
-            _check_callable_signature(target_sig, stage_input_keys, stage_label)
-            
-        # known_categories = set(registry.keys())
-        # for param_key, param_val in step_params.items():
-        #     if not isinstance(param_val, str):
-        #         continue
-        #     is_registered_category = param_key in known_categories
-        #     is_dot_path = "." in param_val and not param_val.startswith(("/", "./", "../"))    
-            
-        #     if is_registered_category or is_dot_path:
-        #         try:
-        #             component_callable = registry.get(registry_name=param_key, name_or_path=param_val)
-        #         except (KeyError, ImportError, AttributeError) as e:
-        #             raise PipelineValidationError(
-        #                 f"Contract Breach in {stage_label} -> '{param_key}={param_val}': {e}"
-        #             ) from e
-                
-        #         if strict_validation:
-        #             target_sig = _resolve_target_callable(component_callable) 
-        #             _check_callable_signature(
-        #                 target_sig, stage_input_keys,
-        #                 f"{stage_label} -> {param_key}='{param_val}'"
-        #             )   
-        
         call_target = workflow_cls.__call__ if inspect.isclass(workflow_cls) else workflow_cls
+        if strict_validation:
+            #target_sig = _resolve_target_callable(workflow_cls)
+            _check_callable_signature(call_target, stage_input_keys, stage_label)
+            
         type_hints = get_type_hints(call_target)
         return_type = type_hints.get("return")
         
