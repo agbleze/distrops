@@ -1,6 +1,8 @@
 from typing import Callable, Dict, Any, List
 import importlib
 
+
+
 class Registry:
     def __init__(self, registry_name: str = "DEFAULT"):
         self.registry_name = registry_name
@@ -65,9 +67,10 @@ class Registry:
             return self._registry[registry_name][name_or_path]
 
         if "." in name_or_path:
-            module_path, attr_name = name_or_path.rsplit(".", 1)
-            module = importlib.import_module(module_path)
-            return getattr(module, attr_name)
+            # module_path, attr_name = name_or_path.rsplit(".", 1)
+            # module = importlib.import_module(module_path)
+            # return getattr(module, attr_name)
+            return resolve_dot_path(dot_path=name_or_path)
         
         available = self.list_available_registry_items(registry_name=registry_name)
         
@@ -86,7 +89,28 @@ class Registry:
         registry_items = list(self._registry.get(registry_name, {}).keys())
         return registry_items
         
-        
+
+def resolve_dot_path(dot_path: str):
+    """
+    Resolves arbitrary nested dot paths like:
+        - 'torch.nn.CrossEntropyLoss' (module.Class)
+        - 'transformers.AutoModelForSequenceClassification.from_pretrained' (module)
+    """
+    parts = dot_path.split(".")
+    
+    for i in range(len(parts), 0, -1):
+        module_name = ".".join(parts[:i])
+        try:
+            obj = importlib.import_module(module_name)
+            
+            for attr in parts[i:]:
+                obj = getattr(obj, attr)
+            return obj
+        except ModuleNotFoundError:
+            continue
+    raise ImportError(f"Could not import any module from path: '{dot_path}'")
+    
+            
 DATASET_REGISTRY = Registry("DATASET_REGISTRY")
 MODEL_REGISTRY = Registry("MODEL_REGISTRY")
 
