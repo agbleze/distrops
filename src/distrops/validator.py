@@ -74,6 +74,7 @@ def _resolve_target_callable(callable_obj: Any) -> Any:
         return callable_obj.__call__
     return callable_obj
 
+
 def _validate_nested_targets(node: Any, registry_name: str, stage_label) -> None:
     if isinstance(node, dict):
         for k, v in node.items():
@@ -102,6 +103,10 @@ def _validate_nested_targets(node: Any, registry_name: str, stage_label) -> None
     
         
 def validate_pipeline_dag(global_config: dict, registry_name="workflows") -> bool:
+    hpo_bounds = global_config.get("hpo_bounds")
+    if isinstance(hpo_bounds, dict):
+        _validate_nested_targets(node=hpo_bounds, registry_name="hpo", stage_label="HPO Config ('hpo_bounds')")
+    
     workflows = global_config.get("workflows", [])
     if not workflows:
         raise PipelineValidationError(f"Configuration manifest contains no 'workflows' steps")
