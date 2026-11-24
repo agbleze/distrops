@@ -14,9 +14,11 @@ from distrops.registry import registry
 import torch
 import functools
 from transformers import AutoModelForSequenceClassification
-
-
-print(f"CHECKING")
+from distrops.runner import (resolve_search_spaces, _sample_resolved_search_spaces,
+                             train_hyperparameter_search
+                             )
+import yaml
+from ray import tune
 
 class MockPrepOutput(TypedDict):
     processed_uri: str
@@ -26,6 +28,12 @@ class MockPrepOutput(TypedDict):
 class MockTrainOutput(TypedDict):
     final_score: float
     optimizer_lr: float
+
+
+@registry.register(registry_name="raw_features", name="custom_scaled_choice")
+def custom_scaled_choice(base_values: list, multiplier: int = 2):
+    """Custom researcher search space prior registered under the parameter's category."""
+    return tune.choice([v * multiplier for v in base_values])
 
 
 @registry.register(name="adam", registry_name="optimizer")
@@ -176,7 +184,7 @@ def test_dag_validation_catches_typo_in_partial_target():
 def test_dynamic_plugin_file_with_unified_registry_end_to_end(tmp_path):
     plugin_file = tmp_path / "custom_research_plugin.py"
     plugin_code = textwrap.dedent("""
-                                  from typing import TypedDict
+                                  from typing import TypedDict, Any
                                   from distrops.registry import registry
                                   
                                   @registry.register(registry_name="loss", name="custom_focal_loss")
@@ -195,29 +203,31 @@ def test_dynamic_plugin_file_with_unified_registry_end_to_end(tmp_path):
                                   
                                   @registry.register(registry_name="workflows", name="plugin_eval_workflow")
                                   class PluginEvalWorkflow:
-                                      def __call__(self, loss: str, focal_gamma: float, focal_alpha: float = 0.25) -> PluginStageOutput:
-                                          loss_cls = registry.get(registry_name="loss", name=loss)
-                                          loss_fn = loss_cls(focal_gamma=focal_gamma, focal_alpha=focal_alpha)
-                                          return {"computed_loss": loss_fn.compute(10.0)}
+                                      def __call__(self, loss: Any,) -> PluginStageOutput:
+                                          #loss_cls = registry.get(registry_name="loss", name_or_path=loss)
+                                          #loss_fn = loss_cls(focal_gamma=focal_gamma, focal_alpha=focal_alpha)
+                                          return {"computed_loss": loss.compute(10.0)}
                                      
                                     
                                 
                                   """
                                   ) 
     plugin_file.write_text(plugin_code)
-    ray.init(ignore_reinit_error=True, num_cpus=2)
+    ray.init(ignore_reinit_error=True, num_cpus=2,
+             runtime_env={"env_vars": {"PYTHONPATH": "src"}}
+             )
     try:
         invalid_config = {
             "plugins": [str(plugin_file)],
             "workflows": [
                 {"name": "plugin_eval_workflow",
                  "resources": {"cpu": 1, "gpu": 0.0},
-                 "params": {"loss": "custom_focal_loss"},
+                 "params": {"loss": {"_target_":"custom_focal_loss"}},
                  }
             ]
         }
         orchestrator_fail = PipelineOrchestrator(invalid_config) 
-        with pytest.raises(PipelineValidationError, match="Missing required arguments \\ ['focal_gamma'\\]"):
+        with pytest.raises(PipelineValidationError, match="Missing required arguments \\['focal_gamma'\\]"):
             orchestrator_fail.run()
             
         valid_config = {
@@ -226,9 +236,9 @@ def test_dynamic_plugin_file_with_unified_registry_end_to_end(tmp_path):
                 {"name": "plugin_eval_workflow",
                  "resources": {"cpu": 1, "gpu": 0.0},
                  "params": {"loss": {"_target_": "custom_focal_loss",
+                                     "focal_gamma": 2.0,
+                                     "focal_alpha": 0.5
                                     },
-                            "focal_gamma": 2.0,
-                            "focal_alpha": 0.5
                             },
                  }
             ]
@@ -333,6 +343,201 @@ def test_pipeline_orchestrator_nested_targets_and_partial_end_to_end_execution()
         assert result["optimizer_lr"] == 0.025
         assert isinstance(result["final_loss"], float)
         assert orchestrator.pipeline_state["input_dim"] == 6
+    finally:
+        ray.shutdown()
+        
+
+
+
+
+def test_resolve_search_spaces_and_dry_run_sampling():
+    """
+    Verifies that '_target_' + '_search_space_: true' resolves both Ray Tune primitives
+    and custom registered distributions while leaving runtime '_target_' blocks untouched.
+    """
+    raw_config = {
+        "workflows": [
+            {"name": "mock_prep",
+             "resources": {"cpu": 1, "gpu": 0.0},
+             "params": {
+                 "raw_uri": "s3://bucket/data",
+                 "raw_features": {
+                     "_target_": "custom_scaled_choice",
+                     "_search_space_": True,
+                     "base_values": [4, 8],
+                     "multiplier": 2,
+                 }
+             }
+            },
+            {
+                "name": "mock_train",
+                "resources": {"cpu": 1, "gpu": 0.0},
+                "params": {
+                    "loss": {"_target_": "torch.nn.CrossEntropyLoss"},
+                    "optimizer": {
+                        "_target_": "torch.optim.SGD",
+                        "_partial_": True,
+                        "lr": {
+                            "_target_": "ray.tune.loguniform",
+                            "_search_space_": True,
+                            "lower": 1e-3,
+                            "upper": 1e-1,
+                        },
+                    },
+                },
+                    
+            },
+        ]
+    }
+    
+    assert validate_pipeline_dag(raw_config) is True
+    resolved_space = resolve_search_spaces(raw_config)
+    prep_sampler = resolved_space["workflows"][0]["params"]["raw_features"]
+    lr_sampler = resolved_space["workflows"][1]["params"]["optimizer"]["lr"]
+    
+    assert isinstance(prep_sampler, tune.search.sample.Categorical)
+    assert prep_sampler.categories == [8, 16]
+    assert isinstance(lr_sampler, tune.search.sample.Float)
+    
+    # Runtime _target_ blocks must remain dicts until worker execution
+    assert resolved_space["workflows"][1]["params"]["loss"] == {"_target_": "torch.nn.CrossEntropyLoss"}
+    
+    # Sample concrete values and re-verify DAG contracts
+    sampled_cfg = _sample_resolved_search_spaces(resolved_space)
+    assert sampled_cfg["workflows"][0]["params"]["raw_features"] in [8, 16]
+    assert 1e-3 <= sampled_cfg["workflows"][1]["params"]["optimizer"]["lr"] <= 1e-1
+    assert validate_pipeline_dag(sampled_cfg) is True
+    
+
+
+def test_runner_train_hyperparameter_search_end_to_end(tmp_path):
+    """
+    Writes a temporary YAML manifest using '_target_' + '_search_space_: true'
+    with both ray.tune.loguniform and a custom plugin distribution, then executes
+    train_hyperparameter_search(config_path) end-to-end.
+    """
+    plugin_file = tmp_path / "custom_dist_plugin.py"
+    plugin_file.write_text(
+        textwrap.dedent("""
+                        from ray import tune
+                        from distrops.registry import registry
+                        from typing import TypedDict, Callable
+                        import functools
+                        import torch
+                        
+                        @registry.register(registry_name="raw_features", name="plugin_feature_choice")
+                        def plugin_feature_choice(options: list):
+                            return tune.choice(options)
+                            
+                            
+                        class PluginPrepOutput(TypedDict):
+                            processed_uri: str
+                            input_dim: int
+                            num_classes: int
+
+                        class PluginTrainOutput(TypedDict):
+                            final_loss: float
+                            optimizer_lr: float
+
+                        @registry.register(registry_name="workflows", name="plugin_mock_prep")
+                        class PluginMockPrep:
+                            def __call__(self, raw_uri: str, raw_features: int = 8, num_classes: int = 3) -> PluginPrepOutput:
+                                return {
+                                    "processed_uri": f"{raw_uri}_ok",
+                                    "input_dim": raw_features,
+                                    "num_classes": num_classes,
+                                }
+
+                        @registry.register(registry_name="workflows", name="plugin_mock_train")
+                        class PluginMockTrain:
+                            def __call__(
+                                self,
+                                processed_uri: str,
+                                input_dim: int,
+                                num_classes: int,
+                                loss: torch.nn.Module,
+                                optimizer: Callable,
+                            ) -> PluginTrainOutput:
+                                model = torch.nn.Linear(input_dim, num_classes)
+                                opt = optimizer(model.parameters())
+                                x = torch.randn(4, input_dim)
+                                y = torch.randint(0, num_classes, (4,))
+                                opt.zero_grad()
+                                loss_val = loss(model(x), y)
+                                loss_val.backward()
+                                opt.step()
+                                return {
+                                    "final_loss": float(loss_val.item()),
+                                    "optimizer_lr": float(opt.param_groups[0]["lr"]),
+                                }
+                        """)
+    )
+    
+    config_file = tmp_path / "hpo_unified_config.yml"
+    yaml_payload = {
+        "plugins": [str(plugin_file)],
+        "infrastructure": {
+            "storage_path": str(tmp_path / "runner_ray_results"),
+            "experiment_name": "runner_unified_hpo_test",
+            "trial_cpu": 1,
+            "trial_gpu": 0.0,
+        },
+        "hpo_bounds": {
+            "metric": "final_loss",
+            "mode": "min",
+            "num_samples": 2,
+            "search_alg": {
+                "_target_": "ray.tune.search.optuna.OptunaSearch",
+                "metric": "final_loss",
+                "mode": "min",
+            },
+            "scheduler": {
+                "_target_": "ray.tune.schedulers.ASHAScheduler",
+                "time_attr": "training_iteration",
+                "max_t": 1,
+                "grace_period": 1,
+            },
+        },
+        "workflows": [
+            {
+                "name": "plugin_mock_prep",
+                "resources": {"cpu": 1, "gpu": 0.0},
+                "params": {
+                    "raw_uri": "s3://bucket/data",
+                    "raw_features": {
+                        "_target_": "plugin_feature_choice",
+                        "_search_space_": True,
+                        "options": [4, 8],
+                    },
+                },
+            },
+            {
+                "name": "plugin_mock_train",
+                "resources": {"cpu": 1, "gpu": 0.0},
+                "params": {
+                    "loss": {"_target_": "torch.nn.CrossEntropyLoss"},
+                    "optimizer": {
+                        "_target_": "torch.optim.SGD",
+                        "_partial_": True,
+                        "lr": {
+                            "_target_": "ray.tune.loguniform",
+                            "_search_space_": True,
+                            "lower": 0.01,
+                            "upper": 0.05,
+                        },
+                    },
+                },
+            },
+        ],
+    }
+    
+    config_file.write_text(yaml.safe_dump(yaml_payload))
+    
+    try:
+        results, best_result = train_hyperparameter_search(config_path=str(config_file))
+        assert len(results) == 2
+        assert "final_loss" in best_result.metrics
+        assert 0.01 <= best_result.metrics["optimizer_lr"] <= 0.05
     finally:
         ray.shutdown()
         
