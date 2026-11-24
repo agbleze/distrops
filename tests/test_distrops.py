@@ -1,6 +1,6 @@
 import pytest
 import ray
-from typing import TypedDict, Callable
+from typing import TypedDict, Callable, Dict, Any
 import textwrap
 from distrops.utils import get_expected_arguments, resolve_config_targets
 from distrops.engine import PipelineOrchestrator
@@ -10,7 +10,8 @@ import torch
 import functools
 from transformers import AutoModelForSequenceClassification
 from distrops.runner import (resolve_search_spaces, _sample_resolved_search_spaces,
-                             train_hyperparameter_search
+                             train_hyperparameter_search,
+                             run_single_train, main
                              )
 import yaml
 from ray import tune
@@ -31,6 +32,20 @@ def custom_scaled_choice(base_values: list, multiplier: int = 2):
     return tune.choice([v * multiplier for v in base_values])
 
 
+@registry.register(registry_name="workflows", name="untyped_dict_prep")
+def untyped_dict_prep(seed_val: int = 7) -> Dict[str, Any]:
+    return {"dynamic_key": seed_val * 2}
+
+
+@registry.register(registry_name="workflows", name="downstream_consumer")
+def downstream_consumer(dynamic_key: int) -> dict:
+    return {"consumed_val": dynamic_key + 1}
+
+@registry.register(registry_name="workflows", name="broken_return_workflow")
+def broken_return_workflow():
+    return "not_a_dict"
+
+    
 @registry.register(name="adam", registry_name="optimizer")
 class MockAdam:
     def __call__():
@@ -536,3 +551,52 @@ def test_runner_train_hyperparameter_search_end_to_end(tmp_path):
     finally:
         ray.shutdown()
         
+        
+
+def test_untyped_dict_fallback_and_stage_override(tmp_path):
+    """Verifies Dict[str, Any] return hints relax strict downstream checks and stage params override upstream keys."""
+    cfg = {
+        "workflows": [
+            {"name": "untyped_dict_prep", "resources": {"cpu": 1, "gpu": 0.0}, "params": {"seed_val": 5}},
+            {"name": "downstream_consumer", "resources": {"cpu": 1, "gpu": 0.0}, "params": {"dynamic_key": 100}},
+        ]
+    }
+    assert validate_pipeline_dag(cfg) is True
+    ray.init(ignore_reinit_error=True, num_cpus=2)
+    try:
+        orch = PipelineOrchestrator(cfg)
+        result = orch.run()
+        assert result == {"consumed_val": 101}
+        assert orch.pipeline_state["stage_0_untyped_dict_prep"] == {"dynamic_key": 10}
+    finally:
+        ray.shutdown()    
+    
+    
+
+def test_cli_train_subcommand_end_to_end(tmp_path, monkeypatch):
+    """Tests `distrops train --config_path ...` CLI entrypoint end-to-end."""
+    config_file = tmp_path / "cli_train.yml"
+    config_file.write_text(
+        yaml.safe_dump({"infrastructure": {"storage_path": str(tmp_path / "cli_out")},
+                        "workflows": [
+                            {"name": "untyped_dict_prep"}
+                        ]})
+    )
+    monkeypatch.setattr("sys.argv", ["distrops", "train", "--config_path", str(config_file)])
+    try:
+        main()
+    finally:
+        ray.shutdown()
+        
+        
+def test_workflow_non_dict_return_raises_type_error():
+    """Ensures workflows returning non-dict objects trigger a clear TypeError."""
+    cfg = {"workflows": [{"name": "broken_return_workflow", "resources": {"cpu": 1, "gpu": 0.0}, "params": {}}]}
+    ray.init(ignore_reinit_error=True, num_cpus=2)
+    try:
+        orch = PipelineOrchestrator(cfg)
+        with pytest.raises(TypeError, match="must return a dict"):
+            orch.run()
+    finally:
+        ray.shutdown()
+    
