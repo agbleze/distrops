@@ -17,6 +17,8 @@ class DistropsWorkflow(abc.ABC):
     @abc.abstractmethod
     def execute_training_pipeline(self, *args, **kwargs):
         pass
+    
+    
 class DecisionTreeWorkflow:
     def __init__(self, config):
         self.config = config
@@ -43,7 +45,7 @@ def _execute_isolated_stage(workflow_name: str, execution_context: dict, registr
     """
     load_plugins(execution_context.get("plugins", []))
     workflow_cls = registry.get(name_or_path=workflow_name, registry_name=registry_name)
-    workflow_instance = workflow_cls()
+    workflow_instance = workflow_cls() if inspect.isclass(workflow_cls) else workflow_cls
     instantiated_context = resolve_config_targets(execution_context, registry_name=registry_name)
     args, kwargs = get_expected_arguments(workflow_instance, instantiated_context)
     output = workflow_instance(*args, **kwargs)
@@ -62,7 +64,7 @@ def register_workflow(name: str):
     return decorator
 
 
-@registry.register(name="prepare_huggingface_data", registry_name="workflow")
+@registry.register(name="prepare_huggingface_data", registry_name="workflows")
 class HuggingFaceDataWorkflow:
     
     def __call__(self, dataset_name, tokenizer_name, output_dir, max_length: int = 128):
@@ -118,7 +120,7 @@ class DeepLearningWorkflow:
         
 
 class PipelineOrchestrator:
-    def __init__(self, global_config: dict, registry_name: str = "workflows", ):
+    def __init__(self, global_config: dict, registry_name: str = "workflows"):
         self.global_config = global_config
         self.registry_name = registry_name
         self.pipeline_state = {**global_config}
@@ -133,13 +135,13 @@ class PipelineOrchestrator:
         
         for idx, step_cfg in enumerate(workflows):
             name = step_cfg.get("name")
-            params = step_cfg.get("params")
-            resources = step_cfg.get("resources", {"cpu": 1, "gpu": 0.0})
+            params = step_cfg.get("params") or {}
+            resources = step_cfg.get("resources") or {"cpu": 1, "gpu": 0.0}
             
             execution_context = {**self.pipeline_state, **params}
             
             print(f"Launching Stage {idx + 1}/{len(workflows)}: '{name}'",
-                  f"[Allocated: {resources.get('cpu'), 1} CPU, {resources.get('gpu', 0.0)} GPU]"
+                  f"[Allocated: {resources.get('cpu', 1)} CPU, {resources.get('gpu', 0.0)} GPU]"
                   )
             
             configured_remote_task = _execute_isolated_stage.options(num_cpus=resources.get("cpu",1),
