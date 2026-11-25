@@ -43,15 +43,20 @@ def _execute_isolated_stage(workflow_name: str, execution_context: dict, registr
     Executes a single workflow stage inside a dynamically sized ray worker process.
     Loads external plugins and recursively instantiates '_target_' configuration.
     """
+    NON_TARGET_ROOT_KEYS = {"workflows", "hpo_bounds", "infrastructure", "plugins"}
     load_plugins(execution_context.get("plugins", []))
     workflow_cls = registry.get(name_or_path=workflow_name, registry_name=registry_name)
     workflow_instance = workflow_cls() if inspect.isclass(workflow_cls) else workflow_cls
-    instantiated_context = resolve_config_targets(execution_context, registry_name=registry_name)
+    filtered_context = {
+        k: v for k,v in execution_context.items() if k not in NON_TARGET_ROOT_KEYS
+    }
+    #instantiated_context = resolve_config_targets(execution_context, registry_name=registry_name)
+    instantiated_context = resolve_config_targets(filtered_context, registry_name=registry_name)
     args, kwargs = get_expected_arguments(workflow_instance, instantiated_context)
     output = workflow_instance(*args, **kwargs)
     
     if not isinstance(output, dict):
-        raise TypeError(f"Worflow '{workflow_cls.__name__}' must return a dict, got {type(output)}")
+        raise TypeError(f"Workflow '{workflow_cls.__name__}' must return a dict, got {type(output)}")
     return output
 
 
@@ -64,36 +69,56 @@ def register_workflow(name: str):
     return decorator
 
 
+class DataPrepOutput(TypedDict):
+    train_data_path: str
+    test_data_path: str
+    
+    
+
 @registry.register(name="prepare_huggingface_data", registry_name="workflows")
 class HuggingFaceDataWorkflow:
     
-    def __call__(self, dataset_name, tokenizer_name, output_dir, max_length: int = 128):
+    def __call__(self, dataset_name, pretrained_model_name_or_path, output_dir, max_length: int = 128) -> DataPrepOutput:
         os.makedirs(output_dir, exist_ok=True)
+        train_path = os.path.join(output_dir, "train.parquet")
+        test_path = os.path.join(output_dir, "test.parquet")
+        if os.path.exists(train_path) and os.path.exists(test_path):
+            print(f"HuggingFaceDataWorkflow: train_path: {train_path} and test_path: ")
+            return {"train_data_path": train_path, "test_data_path": test_path}
+            
         raw_ds = load_dataset(dataset_name)
-        tokenizer = AutoTokenizer.from_pretrained(tokenizer_name, use_fast=False)
+        tokenizer = AutoTokenizer.from_pretrained(pretrained_model_name_or_path, 
+                                                  use_fast=False
+                                                  )
         
         def tokenize_batch(batch):
             tokens = tokenizer(batch["text"], max_length=max_length, 
                                truncation=True,
                                padding="max_length"
                                )
-            tokens["labels"] = batch["label"]
+            if "label" in batch:
+                tokens["labels"] = batch["label"]
+            elif "labels" in batch:
+                tokens["labels"] = batch["labels"]
             return tokens
         
-        train_path = os.path.join(output_dir, "train.parquet")
-        test_path = os.path.join(output_dir, "test.parquet")
         
-        raw_ds["train"].map(tokenize_batch, batched=True).to_parquet(train_path)
-        raw_ds["test"].map(tokenize_batch, batched=True).to_parquet(test_path)
+        
+        train_cols_to_remove = raw_ds["train"].column_names
+        test_cols_to_remove = raw_ds["test"].column_names
+        
+
+        raw_ds["train"].map(tokenize_batch, batched=True, remove_columns=train_cols_to_remove).to_parquet(train_path)
+        raw_ds["test"].map(tokenize_batch, batched=True, remove_columns=test_cols_to_remove).to_parquet(test_path)
         
         return {"train_data_path": train_path, "test_data_path": test_path}
 
 
-@registry.register(name="gradient_descent", registry_name="workflow")
+@registry.register(name="gradient_descent", registry_name="workflows")
 class DeepLearningWorkflow:
     
     def __call__(self, train_data_path: str, test_data_path: str, 
-                 model_registry_key: str, 
+                 #model_registry_key: str, 
                  epochs: int =3,
                  batch_size=16,
                  drop_last=False,
@@ -115,7 +140,7 @@ class DeepLearningWorkflow:
         
         ...
         best_checkpoint = ""
-        return {"checkpoint_point": best_checkpoint, "eval_loss": inf}
+        return {"checkpoint_point": best_checkpoint, "eval_loss": 0.3}
         
         
 
@@ -135,6 +160,7 @@ class PipelineOrchestrator:
         
         for idx, step_cfg in enumerate(workflows):
             name = step_cfg.get("name")
+            step_registry = step_cfg.get("_registry_", self.registry_name)
             params = step_cfg.get("params") or {}
             resources = step_cfg.get("resources") or {"cpu": 1, "gpu": 0.0}
             
@@ -147,7 +173,7 @@ class PipelineOrchestrator:
             configured_remote_task = _execute_isolated_stage.options(num_cpus=resources.get("cpu",1),
                                                                      num_gpus=resources.get("gpu", 0.0)
                                                                      )
-            stage_output = ray.get(configured_remote_task.remote(name, execution_context, self.registry_name))
+            stage_output = ray.get(configured_remote_task.remote(name, execution_context, step_registry))
             
             self.pipeline_state.update(stage_output)
             self.pipeline_state[f"stage_{idx}_{name}"] = stage_output
