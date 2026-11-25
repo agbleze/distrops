@@ -8,6 +8,7 @@ class PipelineValidationError(Exception):
 FRAMEWORK_INJECTED_PARAMS = {"self", "config", "params", 
                              "model_parameters"}
 
+META_KEYS = {"_target_", "_partial_", "_search_space_"}
 
 def _check_callable_signature(callable_obj: Any, 
                               available_keys: set,
@@ -78,12 +79,15 @@ def _resolve_target_callable(callable_obj: Any) -> Any:
 def _validate_nested_targets(node: Any, registry_name: str, stage_label) -> None:
     if isinstance(node, dict):
         for k, v in node.items():
-            if k != "_target_":
+            if k not in META_KEYS:
                 _validate_nested_targets(node=v, registry_name=k, stage_label=stage_label)
                 
         if "_target_" in node:
             target_name = node["_target_"]
             is_partial = bool(node.get("_partial_", False))
+            #is_search_space = bool(node.get("_search_space_", False))
+            registry_name = node.get("_registry_", registry_name)
+            
             try:
                 callable_obj = registry.get(name_or_path=target_name, registry_name=registry_name)
             except (KeyError, ImportError, AttributeError) as e:
@@ -91,7 +95,7 @@ def _validate_nested_targets(node: Any, registry_name: str, stage_label) -> None
                     f"Contract Breach in {stage_label} -> '{registry_name}._target_={target_name}': {e}"
                 ) from e
                 
-            provided_keys = {k for k in node.keys() if k not in ("_target_", "_partial_")}
+            provided_keys = {k for k in node.keys() if k not in META_KEYS}
             _check_callable_signature(callable_obj=callable_obj, available_keys=provided_keys,
                                       stage_label=f"{stage_label} -> {registry_name}('{target_name}')",
                                       is_partial=is_partial
@@ -103,7 +107,7 @@ def _validate_nested_targets(node: Any, registry_name: str, stage_label) -> None
     
         
 def validate_pipeline_dag(global_config: dict, registry_name="workflows") -> bool:
-    hpo_bounds = global_config.get("hpo_bounds")
+    hpo_bounds = global_config.get("hpo_bounds") or {}
     if isinstance(hpo_bounds, dict):
         _validate_nested_targets(node=hpo_bounds, registry_name="hpo", stage_label="HPO Config ('hpo_bounds')")
     
@@ -116,6 +120,7 @@ def validate_pipeline_dag(global_config: dict, registry_name="workflows") -> boo
     
     for idx, step in enumerate(workflows):
         step_name = step.get("name")
+        registry_name = step.get("_registry_", registry_name)
         step_params = step.get("params", {})
         stage_label = f"Stage {idx + 1} ('{step_name}')"
         
