@@ -15,7 +15,8 @@ from distrops.utils import get_expected_arguments
 from distrops.plugin import load_plugins
 from distrops.validator import validate_pipeline_dag
 from distrops.engine import PipelineOrchestrator
-
+import queue
+from ray.util.queue import Queue as RayQueue
 
 
 
@@ -170,6 +171,7 @@ def _extract_sample_config_for_validation(node: Any):
     
     return node
 
+    
 
 def _run_hpo_trial(sampled_params: Dict[str, Any], base_config: Dict[str, Any]) -> None:
     """
@@ -178,8 +180,17 @@ def _run_hpo_trial(sampled_params: Dict[str, Any], base_config: Dict[str, Any]) 
     """
     trial_config = _apply_sampled_params(base_config, sampled_params)
     orchestrator = PipelineOrchestrator(trial_config)
-    final_metrics = orchestrator.run()
-    tune.report(final_metrics)
+    metrics_queue = RayQueue()
+    reported_intermediate = False
+    
+    def _report_live(metrics: Dict[str, Any]) -> None:
+        nonlocal reported_intermediate
+        tune.report(metrics)
+        reported_intermediate = True        
+    
+    final_metrics = orchestrator.run(metrics_queue=metrics_queue, report_fn=_report_live)
+    if not reported_intermediate:
+        tune.report(final_metrics)
             
             
 def _init_ray_cluster(infra_config) -> None:
@@ -259,7 +270,6 @@ def extract_flat_search_space(node: Any, prefix: str = "", registry_name = None)
     so search algorithms like OptunaSearch always receive string-only path keys.
     """
     flat_space = {}
-    #print(f"node: {node}")
    
     if isinstance(node, dict):
         if "_target_" in node and bool(node.get("_search_space_", False)):
