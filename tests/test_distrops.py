@@ -703,4 +703,16 @@ def test_workflow_custom_registry_override_end_to_end():
         assert result == {"custom_task_result": 40}
     finally:
         ray.shutdown()
+
+
+@registry.register(registry_name="tasks", name="multi_epoch_streaming_task")
+class MultiEpochStreamingTask:
+    def __call__(self, epochs: int = 3, metrics_queue=None) -> dict:
+        for ep in range(epochs):
+            if metrics_queue is not None:
+                metrics_queue.put({"eval_loss": 1.0 / (ep + 1), "eval_accuracy": 0.5 + 0.1 * ep})
+        return {"eval_loss": 1.0 / epochs, "eval_accuracy": 0.5 + 0.1 * (epochs - 1)}
+    
+    
+    
     
