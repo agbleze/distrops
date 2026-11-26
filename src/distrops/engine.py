@@ -174,99 +174,6 @@ class HuggingFaceDataWorkflow:
                                                           )
                        )
         
-        # os.makedirs(output_dir, exist_ok=True)
-        # train_path = os.path.join(output_dir, "train.parquet")
-        # test_path = os.path.join(output_dir, "test.parquet")
-        # lock_path = os.path.join(output_dir, ".prep.lock")
-        # if os.path.exists(train_path) and os.path.exists(test_path):
-        #     print(f"HuggingFaceDataWorkflow: train_path: {train_path} and test_path: ")
-        #     return {"train_data_path": train_path, "test_data_path": test_path}
-        
-        # while True:
-        #     try:
-        #         fd = os.open(lock_path, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
-        #         os.close(fd)
-        #         break
-        #     except FileExistsError:
-        #         if os.path.exists(train_path) and os.path.exists(test_path):
-        #             return {"train_data_path": train_path, "test_data_path": test_path}
-        #         time.sleep(1)
-                
-        # try:
-        #     if os.path.exists(train_path) and os.path.exists(test_path):
-        #         return {"train_data_path": train_path, "test_data_path": test_path}
-            
-        #     raw_ds = load_dataset(dataset_name)
-        #     tokenizer = AutoTokenizer.from_pretrained(pretrained_model_name_or_path, 
-        #                                             use_fast=False
-        #                                             )
-            
-        #     def tokenize_batch(batch):
-        #         tokens = tokenizer(batch["text"], max_length=max_length, 
-        #                         truncation=True,
-        #                         padding="max_length"
-        #                         )
-        #         if "label" in batch:
-        #             tokens["labels"] = batch["label"]
-        #         elif "labels" in batch:
-        #             tokens["labels"] = batch["labels"]
-        #         return tokens
-            
-        #     tmp_id = uuid.uuid4().hex[:8]
-        #     tmp_train = f"{train_path}.{tmp_id}.tmp"
-        #     tmp_test = f"{test_path}.{tmp_id}.tmp"
-            
-        #     train_cols_to_remove = raw_ds["train"].column_names
-        #     test_cols_to_remove = raw_ds["test"].column_names
-            
-
-        #     raw_ds["train"].map(tokenize_batch, 
-        #                         batched=True, 
-        #                         remove_columns=train_cols_to_remove
-        #                         ).to_parquet(tmp_train)
-            
-        #     raw_ds["test"].map(tokenize_batch, 
-        #                        batched=True, 
-        #                        remove_columns=test_cols_to_remove
-        #                        ).to_parquet(tmp_test)
-            
-        #     os.replace(tmp_train, train_path)
-        #     os.replace(tmp_test, test_path)
-        # finally:
-        #     if os.path.exists(lock_path):
-        #         os.remove(lock_path)    
-                
-        # return {"train_data_path": train_path, "test_data_path": test_path}
-
-
-@registry.register(name="gradient_descent", registry_name="workflows")
-class DeepLearningWorkflow:
-    
-    def __call__(self, train_data_path: str, test_data_path: str, 
-                 #model_registry_key: str, 
-                 epochs: int =3,
-                 batch_size=16,
-                 drop_last=False,
-                 *args, **kwargs
-                 ):
-        train_ds = ray.data.read_parquet(train_data_path)
-        train_stream = train_ds.iter_torch_batches(batch_size=batch_size)
-        
-        test_ds = ray.data.read_parquet(test_data_path)
-        test_stream = test_ds.iter_torch_batches(batch_size=batch_size)
-        
-        total_samples = train_ds.count()
-        if drop_last:
-            max_steps_per_epoch = total_samples // batch_size
-        else:
-            max_steps_per_epoch = math.ceil(total_samples / batch_size)
-            
-        max_steps = max_steps_per_epoch * epochs
-        
-        ...
-        best_checkpoint = ""
-        return {"checkpoint_point": best_checkpoint, "eval_loss": 0.3}
-        
         
 
 class PipelineOrchestrator:
@@ -278,7 +185,6 @@ class PipelineOrchestrator:
         load_plugins(self.global_config.get("plugins", []))
         
     def run(self, metrics_queue=None, report_fn=None):
-        print(f"report_fn: {report_fn}")
         validate_pipeline_dag(self.global_config)
         
         workflows = self.global_config.get("workflows", [])
