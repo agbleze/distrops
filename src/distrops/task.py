@@ -205,17 +205,21 @@ class GradientDescentTask:
                 flush=True
                 )
             
-            if metrics_queue is not None:
-                met = {"training_iteration": epoch +1,
-                    "eval_loss": avg_eval_loss,
-                    "eval_accuracy": eval_accuracy
-                    }
-                metrics_queue.put(met)
+            
             if avg_eval_loss < best_eval_loss:
                 best_eval_loss = avg_eval_loss
                 best_eval_acc = eval_accuracy
                 best_checkpoint = os.path.join(run_checkpoint_dir, "best_model.pt")
                 torch.save(model.state_dict(), best_checkpoint)
+                
+            if metrics_queue is not None:
+                metric_payload = {"training_iteration": epoch +1,
+                                    "eval_loss": avg_eval_loss,
+                                    "eval_accuracy": eval_accuracy,
+                                    "checkpoint_point": best_checkpoint
+                                }
+                metrics_queue.put(metric_payload)    
+                
         return {"checkpoint_point": best_checkpoint,
                 "eval_loss": best_eval_loss,
                 "eval_accuracy": best_eval_acc
