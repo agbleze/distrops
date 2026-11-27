@@ -100,9 +100,13 @@ def train_hyperparameter_search(config_path: str):
                        run_config=RunConfig(name=run_config_name,
                                             storage_path=storage_path,
                                             callbacks=[TBXLoggerCallback()],
+                                            checkpoint_config=CheckpointConfig(
+                                                num_to_keep=1,
+                                                checkpoint_score_attribute=metric,
+                                                checkpoint_score_order=mode,
+                                            ),
                                             ),
                        param_space=param_search_space
-        
                         )
     
     print("Launching Distributed DAG Hyperparameter Sweep...")
