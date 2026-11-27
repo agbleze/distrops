@@ -17,6 +17,7 @@ from distrops.runner import (
 )
 from distrops.utils import get_expected_arguments, resolve_config_targets
 from distrops.validator import PipelineValidationError, validate_pipeline_dag
+from distrops.callback_utils import BestTrialOnlyCheckpointCallback
 from ray import tune
 from ray import cloudpickle
 import sys
@@ -888,4 +889,91 @@ def test_cli_hpo_subcommand_end_to_end(tmp_path, monkeypatch):
         main()
     finally:
         ray.shutdown()
+
+
+def test_best_trial_only_checkpoint_callback_prunes_suboptimal_trials(tmp_path):
+    """
+    Verifies that BestTrialOnlyCheckpointCallback deletes suboptimal/pruned trial
+    checkpoints immediately while keeping only the single global best checkpoint on disk.
+    """
+    plugin_file = tmp_path / "ckpt_prune_plugin.py"
+    plugin_file.write_text(
+        textwrap.dedent(
+            """
+            import os
+            import uuid
+            from distrops.registry import registry
+            
+            @registry.register(registry_name="tasks", name="dummy_ckpt_task")
+            class DummyCkptTask:
+                def __call__(self, loss_val: float, staging_dir: str, metrics_queue=None) -> dict:
+                    run_dir = os.path.join(staging_dir, f"run_{uuid.uuid4().hex[:8]}")
+                    os.makedirs(run_dir, exist_ok=True)
+                    ckpt_file = os.path.join(run_dir, "best_model.pt")
+                    with open(ckpt_file, "w") as f:
+                        f.write(f"weights_for_loss_{loss_val}")
+                        
+                    payload = {"eval_loss": loss_val, "checkpoint_point": ckpt_file}
+                    if metrics_queue is not None:
+                        metrics_queue.put(payload)
+                    return payload
+            """
+        )
+    )
     
+    staging_dir = tmp_path / "staging"
+    storage_dir = tmp_path / "ray_ckpt_results"
+    config_file = tmp_path / "ckpt_prune_config.yml"
+    
+    config_file.write_text(
+        yaml.safe_dump(
+            {
+                "plugins": [str(plugin_file)],
+                "infrastructure": {
+                                    "storage_path": str(storage_dir),
+                                    "experiment_name": "ckpt_prune_test",
+                                    "trial_cpu": 1,
+                                    "trial_gpu": 0.0,
+                                },
+                "hpo_bounds": {
+                                "metric": "eval_loss",
+                                "mode": "min",
+                                "num_samples": 3,
+                            },
+                "workflows": [
+                    {
+                        "name": "dummy_ckpt_task",
+                        "_registry_": "tasks",
+                        "resources": {"cpu": 1, "gpu": 0.0},
+                        "params": {
+                                    "staging_dir": str(staging_dir),
+                                    "loss_val": {
+                                                "_target_": "ray.tune.grid_search",
+                                                "_search_space_": True,
+                                                "values": [0.9, 0.2, 0.6]
+                                            }
+                                }
+                    }
+                ]
+            }
+        )
+    )
+    try:
+        results, best_result = train_hyperparameter_search(config_path=str(config_file))
+        assert len(results) == 9
+        assert best_result.metrics["eval_loss"] == pytest.approx(0.2)
+        
+        assert best_result.checkpoint is not None
+        assert os.path.exists(best_result.checkpoint.path)
+        assert os.path.exists(os.path.join(best_result.checkpoint.path, "best_model.pt"))
+        
+        surviving_ckpts = [
+                            r.checkpoint.path
+                            for r in results
+                            if r.checkpoint is not None and os.path.exists(r.checkpoint.path)
+                        ]
+        assert len(surviving_ckpts) == 1
+        assert surviving_ckpts[0] == best_result.checkpoint.path
+    finally:
+        ray.shutdown()
+        
