@@ -1,23 +1,23 @@
-from ray import tune
-from ray.tune.schedulers import ASHAScheduler
-from ray.tune.search.optuna import OptunaSearch
-from ray.tune import RunConfig
-import ray
-from .utils import load_config_file, resolve_config_targets
-import os
 import argparse
-from .train_worker import  train_model  
-from ray.tune.logger import TBXLoggerCallback
-from typing import Any, Dict
 import copy
+import os
+import shutil
+from typing import Any
+
+import ray
+from ray import tune
+from ray.tune import Checkpoint, CheckpointConfig, RunConfig
+from ray.tune.logger import TBXLoggerCallback
+from ray.util.queue import Queue as RayQueue
+
+from distrops.callback_utils import BestTrialOnlyCheckpointCallback
+from distrops.engine import PipelineOrchestrator
+from distrops.plugin import load_plugins
 from distrops.registry import registry
 from distrops.utils import get_expected_arguments
-from distrops.plugin import load_plugins
 from distrops.validator import validate_pipeline_dag
-from distrops.engine import PipelineOrchestrator
-import queue
-from ray.util.queue import Queue as RayQueue
-from ray.tune import Checkpoint, CheckpointConfig
+
+from .utils import load_config_file, resolve_config_targets
 
 
 def parse_args():
@@ -37,6 +37,9 @@ def train_hyperparameter_search(config_path: str):
     raw_config = load_config_file(config_path=config_path)
     infra_config = raw_config.get("infrastructure", {})
     hpo_config = raw_config.get("hpo_bounds", {})
+    
+    callbacks = [TBXLoggerCallback()]
+    
     
     load_plugins(raw_config.get("plugins", []))
     #sample_config = _extract_sample_config_for_validation(copy.deepcopy(raw_config))
@@ -65,6 +68,9 @@ def train_hyperparameter_search(config_path: str):
     
     metric = hpo_config.get("metric", "eval_loss")
     mode = hpo_config.get("mode", "min")
+    
+    if hpo_config.get("keep_best_trial_only", True):
+        callbacks.append(BestTrialOnlyCheckpointCallback(metric=metric, mode=mode))
     
     search_alg_cfg = hpo_config.get("search_alg")
     search_alg = resolve_config_targets(search_alg_cfg) if search_alg_cfg else None
@@ -99,7 +105,7 @@ def train_hyperparameter_search(config_path: str):
                                                    ),
                        run_config=RunConfig(name=run_config_name,
                                             storage_path=storage_path,
-                                            callbacks=[TBXLoggerCallback()],
+                                            callbacks=callbacks,
                                             checkpoint_config=CheckpointConfig(
                                                 num_to_keep=1,
                                                 checkpoint_score_attribute=metric,
@@ -174,7 +180,7 @@ def _extract_sample_config_for_validation(node: Any):
 
     
 
-def _run_hpo_trial(sampled_params: Dict[str, Any], base_config: Dict[str, Any]) -> None:
+def _run_hpo_trial(sampled_params: dict[str, Any], base_config: dict[str, Any]) -> None:
     """
     Ray Tune trainable wrapper. Executes the entire multi-stage DAG for one
     sampled hyperparameter configuration and reports final metrics back to Tune.
@@ -184,7 +190,7 @@ def _run_hpo_trial(sampled_params: Dict[str, Any], base_config: Dict[str, Any]) 
     metrics_queue = RayQueue()
     reported_intermediate = False
     
-    def _report_live_with_checkpoint(metrics: Dict[str, Any]) -> None:
+    def _report_live_with_checkpoint(metrics: dict[str, Any]) -> None:
         nonlocal reported_intermediate
         ckpt_path = metrics.get("checkpoint_point")
         if ckpt_path and os.path.exists(ckpt_path):
