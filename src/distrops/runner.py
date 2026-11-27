@@ -115,6 +115,8 @@ def train_hyperparameter_search(config_path: str):
     best_result = results.get_best_result(metric=metric, mode=mode)
     print(f"Best {metric}: {best_result.metrics.get(metric)}")
     print(f"Best Metrics Summary: {best_result.metrics}")
+    if best_result.checkpoint:
+        print(f"Best Checkpoint Path: {best_result.checkpoint.path}")
     return results, best_result
     
     
