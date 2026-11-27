@@ -2,12 +2,12 @@ import functools
 import textwrap
 from collections.abc import Callable
 from typing import Any, TypedDict
-
+import os
 import pytest
 import ray
 import torch
 import yaml
-from distrops.engine import PipelineOrchestrator
+from distrops.engine import PipelineOrchestrator, _DatasetPrepCoordinator
 from distrops.registry import registry
 from distrops.runner import (
     _sample_resolved_search_spaces,
@@ -20,7 +20,9 @@ from distrops.validator import PipelineValidationError, validate_pipeline_dag
 from ray import tune
 from ray import cloudpickle
 import sys
-
+from distrops.task import GradientDescentTask
+import pandas as pd
+from ray.util.queue import Queue as RayQueue
 
 cloudpickle.register_pickle_by_value(sys.modules[__name__])
 
@@ -62,7 +64,14 @@ class CustomNamespaceTask:
         return {"custom_task_result": multiplier * 10}
 
 
-
+@registry.register(registry_name="workflows", name="multi_epoch_streaming_task")
+class MultiEpochStreamingTask:
+    def __call__(self, epochs: int = 3, metrics_queue=None) -> dict:
+        for ep in range(epochs):
+            if metrics_queue is not None:
+                metrics_queue.put({"eval_loss": 1.0 / (ep + 1), "eval_accuracy": 0.5 + 0.1 * ep})
+        return {"eval_loss": 1.0 / epochs, "eval_accuracy": 0.5 + 0.1 * (epochs - 1)}
+    
 
 
 @registry.register(name="adam", registry_name="optimizer")
@@ -705,14 +714,176 @@ def test_workflow_custom_registry_override_end_to_end():
         ray.shutdown()
 
 
-@registry.register(registry_name="tasks", name="multi_epoch_streaming_task")
-class MultiEpochStreamingTask:
-    def __call__(self, epochs: int = 3, metrics_queue=None) -> dict:
-        for ep in range(epochs):
-            if metrics_queue is not None:
-                metrics_queue.put({"eval_loss": 1.0 / (ep + 1), "eval_accuracy": 0.5 + 0.1 * ep})
-        return {"eval_loss": 1.0 / epochs, "eval_accuracy": 0.5 + 0.1 * (epochs - 1)}
+
     
     
+def test_live_per_epoch_metrics_streaming():
+    """Verifies PipelineOrchestrator drains metrics_queue live via ray.wait across multiple epochs."""
+    cfg = {
+        #"plugins": [__file__],  
+        "workflows": [
+            {
+                "name": "multi_epoch_streaming_task",
+                #"_registry_": "tasks",
+                "resources": {"cpu": 1, "gpu": 0.0},
+                "params": {"epochs": 3}
+            }
+        ]
+    }
+    ray.init(ignore_reinit_error=True, num_cpus=2)
+    try:
+        orch = PipelineOrchestrator(cfg)
+        q = RayQueue()
+        streamed_reports = []
+        
+        final_out = orch.run(metrics_queue=q, report_fn=streamed_reports.append)
+        assert len(streamed_reports) == 3
+        assert streamed_reports[0]["eval_loss"] == pytest.approx(1.0)
+        assert streamed_reports[-1]["eval_loss"] == pytest.approx(1.0 / 3)
+        assert final_out["eval_accuracy"] == pytest.approx(0.7)
+    finally:
+        ray.shutdown()
+        
+        
+def test_gradient_descent_task_with_parquet_and_isolated_checkpoints(tmp_path):
+    """Tests GradientDescentTask end-to-end on real Parquet files with _partial_ optimizer and custom loss."""
+    train_parquet = tmp_path / "train.parquet"
+    test_parquet = tmp_path / "test.parquet"
+    ckpt_dir = tmp_path / "checkpoints"
     
+    train_df = pd.DataFrame({"x": [[0.1, 0.2, 0.3, 0.4], [0.9, 0.8, 0.7, 0.6]] * 4,
+                             "y": [0, 1] * 4
+                             }
+                            )
+    
+    test_df = pd.DataFrame({"x": [[0.1, 0.2, 0.3, 0.4], [0.9, 0.8, 0.7, 0.6]],
+                            "y": [0, 1],
+                            }
+                           )
+    train_df.to_parquet(train_parquet)
+    test_df.to_parquet(test_parquet)
+    
+    cfg = {
+        "workflows": [
+            {
+                "name": "gradient_descent",
+                "_registry_": "tasks",
+                "resources": {"cpu": 1, "gpu": 0.5},
+                "params": {
+                    "train_data_path": str(train_parquet),
+                    "test_data_path": str(test_parquet),
+                    "checkpoint_dir": str(ckpt_dir),
+                    "epochs": 2,
+                    "batch_size": 4,
+                    "model": {"_target_": "torch.nn.Linear", "in_features": 4, "out_features": 2},
+                    "loss": {"_target_": "torch.nn.CrossEntropyLoss"},
+                    "optimizer": {"_target_": "torch.optim.AdamW", "_partial_": True, "lr": 0.01},
+                }
+            }
+        ]
+    }
+    
+    assert validate_pipeline_dag(cfg) is True
+    ray.init(ignore_reinit_error=True, num_cpus=2)
+    try:
+        orch = PipelineOrchestrator(cfg)
+        q = RayQueue()
+        reports = []
+        result = orch.run(metrics_queue=q, report_fn=reports.append)
+        
+        assert len(reports) == 2
+        assert "eval_loss" in result and "eval_accuracy" in result
+        assert result["checkpoint_point"].endswith("best_model.pt")
+        assert (tmp_path / result["checkpoint_point"]).exists()
+    finally:
+        ray.shutdown()
+        
+        
+def test_detached_dataset_prep_coordinator_deduplication(tmp_path, monkeypatch):
+    """Verifies _DatasetPrepCoordinator builds Parquet files once and hits cache on concurrent calls."""
+    out_dir = str(tmp_path / "shared_prep")
+    ray.init(ignore_reinit_error=True, num_cpus=2)
+    try:
+        os.makedirs(out_dir, exist_ok=True)
+        train_p = os.path.join(out_dir, "train.parquet")
+        test_p = os.path.join(out_dir, "test.parquet")
+        pd.DataFrame({"input_ids": [[1, 2]], "labels": [0]}).to_parquet(train_p)
+        pd.DataFrame({"input_ids": [[1, 2]], "labels": [0]}).to_parquet(test_p)
+        
+        actor = _DatasetPrepCoordinator.options(
+            name="test_prep_coord_singleton",
+            namespace="distrops_test",
+            lifetime="detached",
+            get_if_exists=True
+        ).remote()
+        
+        res1, res2 = ray.get([
+            actor.ensure_prepared.remote("unused_ds", "unused_tok", out_dir, 16),
+            actor.ensure_prepared.remote("unused_ds", "unused_tok", out_dir, 16),
+        ])
+        assert res1 == res2 == {"train_data_path": train_p, "test_data_path": test_p}
+    finally:
+        ray.shutdown()
+        
+        
+def test_cli_hpo_subcommand_end_to_end(tmp_path, monkeypatch):
+    """Tests `distrops hpo --config_path ...` CLI subcommand end-to-end with multi-epoch streaming."""
+    
+    plugin_file = tmp_path / "streaming_plugin.py"
+    plugin_file.write_text(
+        textwrap.dedent("""
+            from distrops.registry import registry
+
+            @registry.register(registry_name="tasks", name="cli_streaming_task")
+            class CliStreamingTask:
+                def __call__(self, epochs: int = 2, metrics_queue=None) -> dict:
+                    for ep in range(epochs):
+                        if metrics_queue is not None:
+                            metrics_queue.put({"eval_loss": 1.0 / (ep + 1)})
+                    return {"eval_loss": 1.0 / epochs}
+        """)
+    )
+    
+    config_file = tmp_path / "cli_hpo.yml"
+    config_file.write_text(
+        yaml.safe_dump({
+            "plugins": [str(plugin_file)],  
+            "infrastructure": {
+                "storage_path": str(tmp_path / "cli_hpo_out"),
+                "experiment_name": "cli_hpo_smoke",
+                "trial_cpu": 1,
+                "trial_gpu": 0.0,
+            },
+            "hpo_bounds": {
+                "metric": "eval_loss",
+                "mode": "min",
+                "num_samples": 2,
+                "scheduler": {
+                    "_target_": "ray.tune.schedulers.ASHAScheduler",
+                    "time_attr": "training_iteration",
+                    "max_t": 2,
+                    "grace_period": 1,
+                },
+            },
+            "workflows": [
+                {
+                    "name": "cli_streaming_task",
+                    "_registry_": "tasks",
+                    "resources": {"cpu": 1, "gpu": 0.0},
+                    "params": {
+                        "epochs": {
+                            "_target_": "ray.tune.choice",
+                            "_search_space_": True,
+                            "categories": [1,2]
+                        }
+                    }
+                }
+            ]
+        })
+    )
+    monkeypatch.setattr("sys.argv", ["distrops", "hpo", "--config_path", str(config_file)])
+    try:
+        main()
+    finally:
+        ray.shutdown()
     
