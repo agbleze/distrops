@@ -205,19 +205,22 @@ class GradientDescentTask:
                 flush=True
                 )
             
-            
+            saved_ckpt_path = None
             if avg_eval_loss < best_eval_loss:
                 best_eval_loss = avg_eval_loss
                 best_eval_acc = eval_accuracy
                 best_checkpoint = os.path.join(run_checkpoint_dir, "best_model.pt")
                 torch.save(model.state_dict(), best_checkpoint)
+                saved_ckpt_path = best_checkpoint
                 
             if metrics_queue is not None:
                 metric_payload = {"training_iteration": epoch +1,
                                     "eval_loss": avg_eval_loss,
                                     "eval_accuracy": eval_accuracy,
-                                    "checkpoint_point": best_checkpoint
                                 }
+                
+                if saved_ckpt_path is not None:
+                    metric_payload["checkpoint_point"] = saved_ckpt_path
                 metrics_queue.put(metric_payload)    
                 
         return {"checkpoint_point": best_checkpoint,
