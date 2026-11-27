@@ -7,7 +7,7 @@ import math
 import ray.data
 import torch.nn as nn
 import pyarrow as pa
-
+import uuid
 
 class DeepLearningTrainTask:
     def __init__(self, engine, *args, **kwargs):
@@ -121,8 +121,10 @@ class GradientDescentTask:
                             if drop_last else math.ceil(total_samples/batch_size)
                         )
         max_steps = steps_per_epoch * epochs
-            
-        os.makedirs(checkpoint_dir, exist_ok=True)
+        
+        run_id = uuid.uuid4().hex[:8]   
+        run_checkpoint_dir = os.path.join(checkpoint_dir, f"_{run_id}") 
+        os.makedirs(run_checkpoint_dir, exist_ok=True)
         best_eval_loss = float("inf")
         best_eval_acc = 0.0
         best_checkpoint = ""
@@ -144,6 +146,8 @@ class GradientDescentTask:
                     logits = outputs.logits if hasattr(outputs, "logits") else outputs
                 else:
                     inputs = batch.get("inputs") or batch.get("x")
+                    if isinstance(inputs, torch.Tensor) and inputs.is_floating_point():
+                        inputs = inputs.float()
                     outputs = model(inputs)
                     logits = output.logits if hasattr(outputs, "logits") else outputs    
                 
@@ -179,6 +183,8 @@ class GradientDescentTask:
                         logits = outputs.logits if hasattr(outputs, "logits") else outputs
                     else:
                         inputs = batch.get("inputs") or batch.get("x")
+                        if isinstance(inputs, torch.Tensor) and inputs.is_floating_point():
+                            inputs = inputs.float()
                         outputs = model(inputs)
                         logits = outputs.logits if hasattr(outputs, "logits") else outputs
                         
@@ -208,7 +214,7 @@ class GradientDescentTask:
             if avg_eval_loss < best_eval_loss:
                 best_eval_loss = avg_eval_loss
                 best_eval_acc = eval_accuracy
-                best_checkpoint = os.path.join(checkpoint_dir, "best_model.pt")
+                best_checkpoint = os.path.join(run_checkpoint_dir, "best_model.pt")
                 torch.save(model.state_dict(), best_checkpoint)
         return {"checkpoint_point": best_checkpoint,
                 "eval_loss": best_eval_loss,
