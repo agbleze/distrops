@@ -1,12 +1,18 @@
 import functools
+import os
+import sys
 import textwrap
 from collections.abc import Callable
 from typing import Any, TypedDict
-import os
+
+import pandas as pd
 import pytest
 import ray
 import torch
 import yaml
+from ray import cloudpickle, tune
+from ray.util.queue import Queue as RayQueue
+
 from distrops.engine import PipelineOrchestrator, _DatasetPrepCoordinator
 from distrops.registry import registry
 from distrops.runner import (
@@ -17,13 +23,6 @@ from distrops.runner import (
 )
 from distrops.utils import get_expected_arguments, resolve_config_targets
 from distrops.validator import PipelineValidationError, validate_pipeline_dag
-from distrops.callback_utils import BestTrialOnlyCheckpointCallback
-from ray import tune
-from ray import cloudpickle
-import sys
-from distrops.task import GradientDescentTask
-import pandas as pd
-from ray.util.queue import Queue as RayQueue
 
 cloudpickle.register_pickle_by_value(sys.modules[__name__])
 
@@ -976,4 +975,82 @@ def test_best_trial_only_checkpoint_callback_prunes_suboptimal_trials(tmp_path):
         assert surviving_ckpts[0] == best_result.checkpoint.path
     finally:
         ray.shutdown()
+
+
+def test_keep_all_trials_best_checkpoints_when_pruning_disabled(tmp_path):
+    """
+    Verifies that setting `keep_best_trial_only: False` in hpo_bounds preserves
+    each trial's individual best checkpoint for post-sweep evaluation.
+    """
+    plugin_file = tmp_path / "ckpt_keep_all_plugin.py"
+    plugin_file.write_text(
+        textwrap.dedent(
+           """
+            import os
+            import uuid
+            from distrops.registry import registry
+
+            @registry.register(registry_name="tasks", name="dummy_keep_all_task")
+            class DummyKeepAllTask:
+                def __call__(self, loss_val: float, staging_dir: str, metrics_queue=None) -> dict:
+                    run_dir = os.path.join(staging_dir, f"run_{uuid.uuid4().hex[:8]}")
+                    os.makedirs(run_dir, exist_ok=True)
+                    ckpt_file = os.path.join(run_dir, "best_model.pt")
+                    with open(ckpt_file, "w") as f:
+                        f.write(f"weights_for_loss_{loss_val}")
+
+                    payload = {"eval_loss": loss_val, "checkpoint_point": ckpt_file}
+                    if metrics_queue is not None:
+                        metrics_queue.put(payload)
+                    return payload
+            """ 
+        )
+    )
+    config_file = tmp_path / "ckpt_keep_all_config.yml"
+    config_file.write_text(
+        yaml.safe_dump(
+            {
+                "plugins": [str(plugin_file)],
+                "infrastructure": {
+                                    "storage_path": str(tmp_path / "ray_keep_all_results"),
+                                    "experiment_name": "ckpt_keep_all_test",
+                                    "trial_cpu": 1,
+                                    "trial_gpu": 0.0,
+                                },
+                "hpo_bounds": {
+                                "metric": "eval_loss",
+                                "mode": "min",
+                                "num_samples": 1,
+                                "keep_best_trial_only": False,
+                            },
+                "workflows": [
+                                {
+                                    "name": "dummy_keep_all_task",
+                                    "_registry_": "tasks",
+                                    "resources": {"cpu": 1, "gpu": 0.0},
+                                    "params": {
+                                                "staging_dir": str(tmp_path / "staging"),
+                                                "loss_val": {
+                                                            "_target_": "ray.tune.grid_search",
+                                                            "_search_space_": True,
+                                                            "values": [0.9, 0.2, 0.6],
+                                                        },
+                                            },
+                                }
+                    ],
+            }
+        )
+    )
+    try:
+        results, best_result = train_hyperparameter_search(config_path=str(config_file))
+        assert len(results) == 3
+        surviving_ckpts = [
+                            r.checkpoint.path
+                            for r in results
+                            if r.checkpoint is not None and os.path.exists(r.checkpoint.path)
+                        ]
+        assert len(surviving_ckpts) == 3
+    finally:
+        ray.shutdown()
         
+    
