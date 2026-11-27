@@ -795,6 +795,8 @@ def test_gradient_descent_task_with_parquet_and_isolated_checkpoints(tmp_path):
         assert "eval_loss" in result and "eval_accuracy" in result
         assert result["checkpoint_point"].endswith("best_model.pt")
         assert (tmp_path / result["checkpoint_point"]).exists()
+        assert os.path.dirname(result["checkpoint_point"]) != str(ckpt_dir)
+        assert os.path.exists(result["checkpoint_point"])
     finally:
         ray.shutdown()
         
