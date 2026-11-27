@@ -17,7 +17,7 @@ from distrops.validator import validate_pipeline_dag
 from distrops.engine import PipelineOrchestrator
 import queue
 from ray.util.queue import Queue as RayQueue
-
+from ray.tune import Checkpoint, CheckpointConfig
 
 
 def parse_args():
@@ -45,9 +45,8 @@ def train_hyperparameter_search(config_path: str):
     #param_search_space = resolve_search_spaces(copy.deepcopy(raw_config))
     param_search_space = extract_flat_search_space(copy.deepcopy(raw_config))
     if not param_search_space:
-        raise ValueError(
-            "No '_search_space_: true' blocks found in configuration for HPO sweep."
-        )
+        raise ValueError("No '_search_space_: true' blocks found in configuration for HPO sweep."
+                        )
         
     sampled_values = {
         k: v.sample() if hasattr(v, "sample") else v 
@@ -72,10 +71,6 @@ def train_hyperparameter_search(config_path: str):
     
     scheduler_cfg = hpo_config.get("scheduler")
     scheduler = resolve_config_targets(scheduler_cfg) if scheduler_cfg else None
-    
-    # trial_resources = {"cpu": infra_config.get("trial_cpu", 1),
-    #                    "gpu": infra_config.get("trial_gpu", 0.0)
-    #                    }
     
     workflows = raw_config.get("workflows", [])
     max_stage_cpu = max((step.get("resources", {}).get("cpu", 1) for step in workflows),
@@ -183,14 +178,21 @@ def _run_hpo_trial(sampled_params: Dict[str, Any], base_config: Dict[str, Any]) 
     metrics_queue = RayQueue()
     reported_intermediate = False
     
-    def _report_live(metrics: Dict[str, Any]) -> None:
+    def _report_live_with_checkpoint(metrics: Dict[str, Any]) -> None:
         nonlocal reported_intermediate
-        tune.report(metrics)
+        ckpt_path = metrics.get("checkpoint_point")
+        if ckpt_path and os.path.exists(ckpt_path):
+            ckpt_dir = os.path.dirname(ckpt_path)
+            tune_ckpt = Checkpoint.from_directory(ckpt_dir)
+            tune.report(metrics, checkpoint=tune_ckpt)
+            shutil.rmtree(ckpt_dir, ignore_errors=True)
+        else:
+            tune.report(metrics)
         reported_intermediate = True        
     
-    final_metrics = orchestrator.run(metrics_queue=metrics_queue, report_fn=_report_live)
+    final_metrics = orchestrator.run(metrics_queue=metrics_queue, report_fn=_report_live_with_checkpoint)
     if not reported_intermediate:
-        tune.report(final_metrics)
+        _report_live_with_checkpoint(final_metrics)
             
             
 def _init_ray_cluster(infra_config) -> None:
@@ -314,10 +316,7 @@ def _apply_sampled_params(base_config: dict, sampled_params: dict):
         else:
             curr[last] = value
     return merged
-    
-    
-    
-    
+        
     
     
 def main():
